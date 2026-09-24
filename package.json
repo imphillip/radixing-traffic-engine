@@ -1,10 +1,21 @@
 {
   "name": "@radixing/traffic-engine",
   "version": "0.1.0",
-  "description": "Deterministic traffic evidence and routing decisions",
+  "description": "Deterministic traffic policy engine for conditional delivery, cloaking workflows, and WAF integrations",
   "type": "module",
   "license": "MIT",
   "repository": "github:imphillip/radixing-traffic-engine",
+  "homepage": "https://radixing.com",
+  "keywords": [
+    "traffic-routing",
+    "policy-engine",
+    "conditional-delivery",
+    "traffic-cloaking",
+    "bot-detection",
+    "fingerprinting",
+    "waf",
+    "edge-computing"
+  ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
