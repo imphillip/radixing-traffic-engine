@@ -33,3 +33,23 @@ export {
   BEHAVIOR_COOLDOWN_MS,
 } from "./behavior.js";
 export type { BehaviorState, BehaviorAssessment } from "./behavior.js";
+export {
+  JEV_MODEL,
+  JEV_FEATURE_VERSION,
+  JEV_MAX_RESPONSE_BYTES,
+  jevVisitorClasses,
+  JevGatewayError,
+  sanitizeJevFeatures,
+  parseJevClassification,
+  createOpenRouterJevGateway,
+} from "./jev.js";
+export type {
+  JevVisitorClass,
+  JevActionableClass,
+  JevFeatureState,
+  JevClassification,
+  JevGateway,
+  JevGatewayErrorCode,
+} from "./jev.js";
+export { parseJevDecisionPolicy, decideWithJev } from "./decision-flow.js";
+export type { JevDecisionPolicy, JevDecisionStatus, JevDecisionResult, JevDecisionInput } from "./decision-flow.js";

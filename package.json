@@ -1,7 +1,7 @@
 {
   "name": "@radixing/traffic-engine",
-  "version": "0.1.0",
-  "description": "Deterministic traffic policy engine for conditional delivery, cloaking workflows, and WAF integrations",
+  "version": "0.2.0",
+  "description": "Deterministic traffic policy engine with optional Jev classification for cloaking workflows and WAF integrations",
   "type": "module",
   "license": "MIT",
   "repository": "github:imphillip/radixing-traffic-engine",
@@ -13,6 +13,7 @@
     "traffic-cloaking",
     "bot-detection",
     "fingerprinting",
+    "jev",
     "waf",
     "edge-computing"
   ],
@@ -24,7 +25,7 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": ["dist", "docs"],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",

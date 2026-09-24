@@ -169,7 +169,7 @@ function parseCondition(value: unknown, path: string): Condition {
   return { field: field as SignalField, operator: typedOperator, value: value.value };
 }
 
-function parseAction(value: unknown, path: string): Action {
+export function parsePolicyAction(value: unknown, path: string): Action {
   if (!isRecord(value)) throw new Error(`${path} must be an object`);
   const type = requireString(value.type, `${path}.type`);
 
@@ -229,7 +229,7 @@ function parseRule(value: unknown, index: number): Rule {
     conditions: value.conditions.map((condition, conditionIndex) =>
       parseCondition(condition, `${path}.conditions[${conditionIndex}]`),
     ),
-    action: parseAction(value.action, `${path}.action`),
+    action: parsePolicyAction(value.action, `${path}.action`),
   };
 }
 
@@ -299,7 +299,7 @@ export function parsePublishedConfig(value: unknown): PublishedConfig {
     defaultOrigin = parseExternalUrl(value.defaultOrigin, "defaultOrigin", true);
   } else {
     if (value.defaultOrigin !== undefined) throw new Error("schemaVersion 2 cannot use defaultOrigin");
-    const action = parseAction(value.defaultAction, "defaultAction");
+    const action = parsePolicyAction(value.defaultAction, "defaultAction");
     if (action.type !== "redirect") throw new Error("defaultAction must be a redirect");
     if (rules.some((rule) => rule.action.type === "allow" || rule.action.type === "route")) {
       throw new Error("schemaVersion 2 rules must redirect or block");

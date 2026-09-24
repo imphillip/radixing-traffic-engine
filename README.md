@@ -3,7 +3,7 @@
 [![CI](https://github.com/imphillip/radixing-traffic-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/imphillip/radixing-traffic-engine/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-A small, deterministic TypeScript policy engine for traffic classification and routing decisions. It parses versioned policies, derives narrow evidence from supplied request observations, and selects an explicit action with an optional explanation. It is the open-source decision core used by [Radixing](https://radixing.com).
+A TypeScript traffic decision engine with deterministic rules and an optional Jev classification gateway. It parses versioned policies, derives narrow evidence from supplied request observations, and selects an explicit action with an optional explanation. It is the open-source decision core used by [Radixing](https://radixing.com).
 
 ## Where it fits
 
@@ -11,8 +11,9 @@ A small, deterministic TypeScript policy engine for traffic classification and r
 - **WAF integrations:** turn specific probe-path evidence into a policy signal and evaluate explicit block rules. This is not a managed WAF, IP reputation feed, challenge service, or DDoS defense.
 - **Bot-aware routing:** combine bounded User-Agent and Client Hints analysis with versioned probe and path-diversity evidence. `declared`, `suspected`, and `unknown` are observations, not verified visitor identities or automatic enforcement decisions.
 - **Policy simulation:** call `explainRules` to inspect the first matching rule and condition results without echoing raw signal values.
+- **Ambiguous visits:** call `decideWithJev` after static rules for explicitly selected redirect paths. A typed Jev class can map to an action through a versioned local policy; missing, weak, invalid, or late answers keep the static action.
 
-The library performs no network or storage I/O, origin fetch, or action execution. It does not include a proxy, browser SDK, IP database, model provider, or merchant data. Hosts supply trusted observations, maintain behavioral state, execute the selected action, and record their own audit trail.
+The static evaluator performs no I/O. The optional OpenRouter Jev gateway makes one bounded model request only when the host calls the async decision flow. The library does not include a proxy, browser SDK, IP database, or merchant data. Hosts supply trusted observations, maintain behavioral state, enforce rate/circuit limits, execute the selected action, and record their own audit trail.
 
 ## Install
 
@@ -51,7 +52,9 @@ const decision = evaluateRules(policy, { "request.path": "/.env", ...fingerprint
 
 Evidence does not automatically block traffic. Missing signals are unknown, not a human classification. Version 1 policies retain their legacy `allow` fallback for host-side proxying; version 2 requires an explicit default redirect. In both versions, the first matching rule wins.
 
-The probe catalog is deliberately narrow and versioned. See [rule provenance](docs/rule-provenance.md). All fixtures in this repository are synthetic; merchant traffic, IP lists, customer configuration, credentials, and model-provider calls are outside this package.
+The probe catalog is deliberately narrow and versioned. See [rule provenance](docs/rule-provenance.md). All fixtures in this repository are synthetic; merchant traffic, IP lists, customer configuration, credentials, and live provider calls are absent from tests.
+
+The optional [Jev gateway](docs/jev-gateway.md) includes a fixed OpenRouter Choice question, a positive feature allowlist, response validation, a 2-second maximum deadline, and an explicit observe/enforce policy. It never maps `unresolved` to an action. A model class is a candidate observation, not verified identity; action mappings and thresholds need labeled evaluation before use on live traffic.
 
 ## Development
 
