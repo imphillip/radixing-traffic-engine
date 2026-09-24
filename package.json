@@ -1,0 +1,31 @@
+{
+  "name": "@radixing/traffic-engine",
+  "version": "0.1.0",
+  "description": "Deterministic traffic evidence and routing decisions",
+  "type": "module",
+  "license": "MIT",
+  "repository": "github:imphillip/radixing-traffic-engine",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check": "npm run typecheck && npm test && npm run build",
+    "prepare": "npm run build"
+  },
+  "dependencies": {
+    "structured-headers": "2.0.3"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11"
+  }
+}
