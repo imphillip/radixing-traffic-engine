@@ -56,6 +56,13 @@ The probe catalog is deliberately narrow and versioned. See [rule provenance](do
 
 The optional [Jev gateway](docs/jev-gateway.md) includes a fixed OpenRouter Choice question, a positive feature allowlist, response validation, a 2-second maximum deadline, and an explicit observe/enforce policy. It never maps `unresolved` to an action. A model class is a candidate observation, not verified identity; action mappings and thresholds need labeled evaluation before use on live traffic.
 
+## Documentation
+
+- [Architecture and host integration](docs/architecture.md): decision flow, execution boundary, and host responsibilities.
+- [Policy and signal reference](docs/policy-reference.md): schema versions, rule matching, evidence, and actions.
+- [Jev decision gateway](docs/jev-gateway.md): eligibility, local mapping, failure behavior, and privacy controls.
+- [Probe rule provenance](docs/rule-provenance.md): the narrow built-in probe catalog and its review sources.
+
 ## Development
 
 Run `npm ci && npm run check` to typecheck, test, and build. The package exports ESM JavaScript and TypeScript declarations from `dist/`. Rule changes should include positive and negative synthetic tests and a version bump when evidence semantics change.
