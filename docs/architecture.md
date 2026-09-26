@@ -2,6 +2,8 @@
 
 This package selects actions; the host application owns the request lifecycle. The static evaluator is deterministic and has no network or storage dependencies. The optional Jev path makes a bounded model request only when the host calls `decideWithJev` with an eligible policy and a gateway.
 
+The rule-learning path is separate from request handling. Hosts can generate declarative candidates from reviewed evidence, use `parseRuleProposal` and `replayRuleProposal` to validate them, and call `reviewRuleSet` for periodic hygiene. These pure functions neither change the published policy nor call an LLM. See [rule learning and review](rule-learning.md) for the daily incremental, twice-monthly full-review and incident-triggered workflow.
+
 ```mermaid
 flowchart LR
     A["Host collects trusted request signals"] --> B["Static first-match evaluation"]
@@ -33,6 +35,7 @@ flowchart LR
 | Jev access | Supply the API key, rate and spend limits, circuit breaker, sampling policy, telemetry retention, and a reviewed local action mapping. |
 | Action execution | Apply redirects, blocks, allows or origin routing once; handle path/query forwarding, error responses and attribution outside this package. |
 | Release | Pin a reviewed engine commit, test with the host's real signal extraction, and deploy the host separately. A public package update does not change a running service. |
+| Rule learning | Store private evidence and reviewed labels, schedule incremental/full/incident jobs, run any rule-proposing model, shadow and approve candidates, publish immutable versions, and roll back when needed. |
 
 The engine deliberately separates **observed evidence**, **selected action**, and **executed outcome**. For example, `request.probe: true` is an observation; it blocks only if a published rule selects a block action, and the host must still execute that action successfully.
 

@@ -70,3 +70,5 @@ The host supplies these values. `network.ip` is not an IP reputation lookup; its
 `block` supports HTTP 403, 404 or 410 and an optional short body. `redirect` supports 301, 302, 307 or 308 and optional `preservePath`; the host implements path/query forwarding. `allow` and `route` are v1-only. Optional `attribution` configuration is parsed and retained with a policy, but click IDs, forwarding, persistence and callbacks belong to the host.
 
 The optional Jev path uses a **separate** policy bound to the published `propertyId` and `version`; it does not add a new static rule operator. See [architecture and host integration](architecture.md) and [Jev decision gateway](jev-gateway.md) before connecting it to live requests.
+
+A learned rule is also separate from the published snapshot until the host explicitly publishes a new version. `parseRuleProposal` validates a candidate against this policy schema, `replayRuleProposal` compares its hypothetical first-match effect with the current policy, and `reviewRuleSet` flags due/expired rules and exact duplicate or shadowed predicates. See [rule learning and review](rule-learning.md).

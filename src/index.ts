@@ -53,3 +53,12 @@ export type {
 } from "./jev.js";
 export { parseJevDecisionPolicy, decideWithJev } from "./decision-flow.js";
 export type { JevDecisionPolicy, JevDecisionStatus, JevDecisionResult, JevDecisionInput } from "./decision-flow.js";
+export { parseRuleProposal, reviewRuleProposal, replayRuleProposal, reviewRuleSet } from "./rule-learning.js";
+export type {
+  RuleProposal,
+  ReplayCase,
+  RuleReplaySummary,
+  RuleReviewRecord,
+  RuleReviewIssue,
+  RuleSetReview,
+} from "./rule-learning.js";
