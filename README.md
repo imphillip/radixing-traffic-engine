@@ -1,77 +1,114 @@
-# Radixing Traffic Decision Engine
+# Radixing TDS
 
 [![CI](https://github.com/imphillip/radixing-traffic-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/imphillip/radixing-traffic-engine/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-A TypeScript traffic decision engine with deterministic rules, bounded temporal evidence, and an optional Jev classification gateway. It parses versioned policies, derives evidence from supplied observations, and selects an explicit action with an optional explanation. It is the open-source decision core used by [Radixing](https://radixing.com).
+A deterministic Traffic Distribution System for paid-traffic ingress and conditional destination routing. Automatically refreshed open IP, network and crawler data enrich incoming requests; explicit project rules select a destination. Run it as a Node.js redirect service or embed its TypeScript decision core.
 
-## Where it fits
+**Version 1.0.0 uses no Jev, LLM, model providers or API keys.** Identical policy, data snapshot, request observations and evaluation time produce identical decisions. Deterministic matching does not make upstream labels, User-Agent claims or inferred locations infallible.
 
-- **Traffic cloaking and conditional delivery:** evaluate ordered rules for supplied geography, network, device, campaign, and request signals, then select an explicit redirect, block, allow, or route action. Your application controls signal collection and execution.
-- **WAF integrations:** turn specific probe-path evidence into a policy signal and evaluate explicit block rules. This is not a managed WAF, IP reputation feed, challenge service, or DDoS defense.
-- **Bot-aware routing:** combine bounded User-Agent and Client Hints analysis with versioned probe and path-diversity evidence. `declared`, `suspected`, and `unknown` are observations, not verified visitor identities or automatic enforcement decisions.
-- **Policy simulation:** call `explainRules` to inspect the first matching rule and condition results without echoing raw signal values.
-- **Traffic history:** advance bounded per-stream state to compare adjacent request windows for changes in rate, path repetition, probes, transitions, and fingerprint concentration. Incomplete or sparse windows produce no rule signals.
-- **Forward validation:** replay a proposed rule chronologically on a later period, compare it with the static baseline, and count independently reviewed outcomes without using future events as features.
-- **Ambiguous visits:** call `decideWithJev` after static rules for explicitly selected redirect paths. A typed Jev class can map to an action through a versioned local policy; missing, weak, invalid, or late answers keep the static action.
-- **Rule learning:** validate model- or analyst-proposed rules against a published policy, replay them against reviewed cases, and inspect lifecycle issues before a host publishes a new version.
+## Request flow
 
-The static evaluator and temporal analysis perform no I/O. The optional OpenRouter Jev gateway makes one bounded model request only when the host calls the async decision flow. The library does not include a proxy, browser SDK, IP database, or merchant data. Hosts supply trusted observations, isolate and persist state, enforce rate/circuit limits, execute the selected action, and record their own audit trail.
-
-## Install
-
-```bash
-npm install git+https://github.com/imphillip/radixing-traffic-engine.git#main
+```mermaid
+flowchart LR
+  Sources[Open feature sources] --> Update[Scheduled download and validation]
+  Update --> Snapshot[Versioned local snapshot]
+  Request[Inbound request] --> Features[Network and device features]
+  Snapshot --> Features
+  Features --> Rules[Ordered project rules]
+  Policy[Project policy] --> Rules
+  Rules --> Decision[Explicit destination or block]
+  Decision --> HTTP[HTTP execution]
+  Decision --> Audit[Version and rule evidence]
 ```
 
-The package is currently distributed from GitHub, not the npm registry. Pin a full commit SHA for reproducible production builds.
+No dataset download happens on the request path. Refresh failures preserve the last valid snapshot. Expired or unavailable feature sources contribute unknown values; unmatched requests use the configured default.
 
-## Example
+## Included capabilities
+
+- IPtoASN IPv4 and IPv6 ASN/organization mapping.
+- X4B known VPN and datacenter IPv4 prefix lists.
+- Automatically refreshed crawler User-Agent rules, matched with a linear-time RE2 engine.
+- Browser, OS and device parsing with pinned Bowser; bounded Client Hints consistency checks.
+- Optional DB-IP Country Lite geolocation with attribution requirements.
+- Project rules for network, geography, device, browser, campaign, path and method; IPv4/IPv6 CIDR conditions.
+- Stable weighted A/B assignment using an explicit key, fixed salt and missing-key fallback.
+- Redirects with explicit query forwarding, optional path forwarding, and optional basic probe blocking.
+- Checksummed data snapshots, atomic activation, previous-version rollback and source freshness evidence.
+- A standalone Node.js service with scheduled refresh and a separately importable synchronous core.
+
+Network and bot observations never block traffic automatically. Security is supporting functionality, not a managed WAF or DDoS service. Browser Canvas/WebGL fingerprint collection, visitor tracking, conversions, merchant accounts and administration UI are outside this release.
+
+## Run
+
+Requires Node.js 22 or later.
+
+```sh
+git clone https://github.com/imphillip/radixing-traffic-engine.git
+cd radixing-traffic-engine
+git checkout v1.0.0
+npm ci
+npm run data:sync
+npm start -- --policy examples/policy.json --data .tds-data
+```
+
+Edit the example policy to use your ingress hostname and HTTPS destinations. The example uses reserved `example.com` domains and is not a live routing configuration. The service binds to `127.0.0.1:8787` by default; use a TLS reverse proxy for public ingress.
+
+```sh
+curl -I -H 'Host: go.example.com' http://127.0.0.1:8787/
+```
+
+On startup the service loads a verified snapshot, or downloads one if no snapshot exists. It refreshes all configured sources every 24 hours and reloads externally updated or rolled-back snapshots every minute. Sources older than seven days are excluded from enrichment. Change these limits with `--refresh-hours` and `--max-age-hours`.
+
+```sh
+# Optional country lookup; read the attribution requirements first.
+npm run data:sync -- --country
+npm start -- --country
+
+# Restore the previously active dataset; a running service reloads it within a minute.
+node dist/cli.js rollback --data .tds-data
+```
+
+Country mode must be used consistently for sync and serve. With country mode, the current month's DB-IP URL is resolved on every refresh. Without it, country can be supplied by a trusted host integration.
+
+## Embed
+
+The package is distributed through GitHub and release assets, not the npm registry. Pin a tag or a full commit for production builds.
+
+```sh
+npm install git+https://github.com/imphillip/radixing-traffic-engine.git#v1.0.0
+```
 
 ```ts
-import { analyzeFingerprint, evaluateRules, fingerprintSignals, parsePublishedConfig } from "@radixing/traffic-engine";
+import { createTds } from "@radixing/traffic-engine";
 
-const policy = parsePublishedConfig({
-  schemaVersion: 2,
-  propertyId: "example",
-  version: 1,
-  domains: ["go.example.com"],
-  defaultAction: { type: "redirect", status: 302, url: "https://app.example.com" },
-  rules: [{
-    id: "sensitive-path",
-    name: "Sensitive file probe",
-    enabled: true,
-    priority: 1,
-    match: "all",
-    conditions: [{ field: "request.probe", operator: "eq", value: true }],
-    action: { type: "block", status: 404 },
-  }],
+const tds = createTds(projectPolicy, downloadedSnapshot);
+const { response, decision } = tds.handle({
+  request,
+  ip: trustedClientIp,
+  now: Date.now(),
 });
-
-const evidence = analyzeFingerprint({ path: "/.env", userAgent: "curl/8.0" });
-const decision = evaluateRules(policy, { "request.path": "/.env", ...fingerprintSignals(evidence) });
-// decision = { ruleId: "sensitive-path", action: { type: "block", status: 404 } }
+// Return response; persist decision versions and rule IDs in your own audit store.
 ```
 
-Evidence does not automatically block traffic. Missing signals are unknown, not a human classification. Version 1 policies retain their legacy `allow` fallback for host-side proxying; version 2 requires an explicit default redirect. In both versions, the first matching rule wins.
-
-The probe catalog is deliberately narrow and versioned. See [rule provenance](docs/rule-provenance.md). All fixtures in this repository are synthetic; merchant traffic, IP lists, customer configuration, credentials, and live provider calls are absent from tests.
-
-The optional [Jev gateway](docs/jev-gateway.md) includes a fixed OpenRouter Choice question, a positive feature allowlist, response validation, a 2-second maximum deadline, and an explicit observe/enforce policy. It never maps `unresolved` to an action. A model class is a candidate observation, not verified identity; action mappings and thresholds need labeled evaluation before use on live traffic.
-
-The optional [rule-learning workflow](docs/rule-learning.md) supports daily incremental discovery, full reviews on the 1st and 15th, and incident-triggered review. These are host-operated cadences, not background jobs in this package. `parseRuleProposal`, `replayRuleProposal`, and `reviewRuleSet` provide deterministic review inputs; they cannot publish or execute a new rule. Model classifications are discovery hints, not independently reviewed labels.
-
-The [temporal analysis contract](docs/temporal-analysis.md) adds versioned event/window evidence and chronological proposal replay. It starts with descriptive statistics and change detection; no model family is required. An optional model provider may propose candidates outside the request path, but neither a model label nor its confidence is ground truth. A package update does not change a host's live route or its pinned version.
+`@radixing/traffic-engine/node` exports the updater, snapshot loader, rollback and standalone server. The core import has no Node.js dependencies and performs no I/O. Full global ASN snapshots can consume substantial memory; constrained edge integrations should use scoped datasets or host-supplied trusted ASN/geolocation observations. The library never trusts forwarded-IP headers by itself.
 
 ## Documentation
 
-- [Architecture and host integration](docs/architecture.md): decision flow, execution boundary, and host responsibilities.
-- [Policy and signal reference](docs/policy-reference.md): schema versions, rule matching, evidence, and actions.
-- [Jev decision gateway](docs/jev-gateway.md): eligibility, local mapping, failure behavior, and privacy controls.
-- [Rule learning and review](docs/rule-learning.md): proposal schema, replay, lifecycle checks, cadence, and release boundaries.
-- [Temporal analysis](docs/temporal-analysis.md): event/state contract, window signals, forward replay, and Hosted integration boundary.
-- [Probe rule provenance](docs/rule-provenance.md): the narrow built-in probe catalog and its review sources.
+- [Architecture](docs/architecture.md): data plane, execution and host responsibilities.
+- [Open data sources](docs/data-sources.md): formats, licenses, provenance, coverage and update validation.
+- [Policy reference](docs/policy-reference.md): fields, matching, stable split and action semantics.
+- [Operations](docs/operations.md): automatic refresh, rollback, reverse proxy and deployment.
+- [Migration to 1.0](docs/migration-1.0.md): removed model APIs and compatibility boundaries.
+- [Probe provenance](docs/rule-provenance.md): the optional narrow built-in probe catalog.
 
 ## Development
 
-Run `npm ci && npm run check` to typecheck, test, and build. The package exports ESM JavaScript and TypeScript declarations from `dist/`. Rule changes should include positive and negative synthetic tests and a version bump when evidence semantics change.
+```sh
+npm ci
+npm run check
+```
+
+Tests use synthetic fixtures and mocked feeds; normal CI makes no live provider calls. Live source verification is an explicit operator command. Weekly Dependabot proposals maintain pinned parser dependencies; a parser update requires review, tests and a new release. Dataset refreshes do not update parser code or rewrite project rules.
+
+The engine code is MIT licensed. Downloaded datasets and dependencies retain their own terms; see [third-party notices](THIRD_PARTY_NOTICES.md). No private hosting configuration, merchant traffic or credentials are included.

@@ -1,3 +1,5 @@
+import ipaddr from "ipaddr.js";
+
 export const signalFields = [
   "geo.country",
   "geo.region",
@@ -5,12 +7,18 @@ export const signalFields = [
   "network.ip",
   "network.asn",
   "network.organization",
+  "network.vpn",
+  "network.datacenter",
+  "network.country",
   "client.bot",
   "client.automation",
   "client.headless",
   "client.uaMismatch",
   "device.type",
   "device.os",
+  "browser.name",
+  "browser.version",
+  "client.key",
   "request.hostname",
   "request.path",
   "request.probe",
@@ -20,13 +28,6 @@ export const signalFields = [
   "campaign.source",
   "campaign.medium",
   "campaign.name",
-  "temporal.ready",
-  "temporal.requestRateRatio",
-  "temporal.repeatShareDelta",
-  "temporal.probeShareDelta",
-  "temporal.pathTransitionShareDelta",
-  "temporal.fingerprintShareDelta",
-  "temporal.peakMinuteRatio",
 ] as const;
 
 export type SignalField = (typeof signalFields)[number];
@@ -34,11 +35,7 @@ export type Scalar = string | number | boolean;
 export type DeviceType = "bot" | "desktop" | "mobile" | "tablet";
 export const automationKinds = ["declared", "suspected", "unknown"] as const;
 export type AutomationKind = (typeof automationKinds)[number];
-export const fingerprintBooleanFields = ["client.headless", "client.uaMismatch", "request.probe", "request.pathEnumeration"] as const;
-export const temporalNumericFields = [
-  "temporal.requestRateRatio", "temporal.repeatShareDelta", "temporal.probeShareDelta",
-  "temporal.pathTransitionShareDelta", "temporal.fingerprintShareDelta", "temporal.peakMinuteRatio",
-] as const;
+export const fingerprintBooleanFields = ["client.headless", "client.uaMismatch", "request.probe", "request.pathEnumeration", "client.bot", "network.vpn", "network.datacenter"] as const;
 
 export type TrafficSignals = {
   [Field in SignalField]?: Scalar | undefined;
@@ -49,10 +46,11 @@ export type TrafficSignals = {
   "client.uaMismatch"?: boolean | undefined;
   "request.probe"?: boolean | undefined;
   "request.pathEnumeration"?: boolean | undefined;
-  "temporal.ready"?: boolean | undefined;
+  "network.vpn"?: boolean | undefined;
+  "network.datacenter"?: boolean | undefined;
 };
 
-export type Operator = "eq" | "neq" | "in" | "notIn" | "contains" | "startsWith" | "gte" | "lte" | "exists";
+export type Operator = "eq" | "neq" | "in" | "notIn" | "contains" | "startsWith" | "gte" | "lte" | "exists" | "inCidr" | "notInCidr";
 
 export interface Condition {
   field: SignalField;
@@ -63,8 +61,11 @@ export interface Condition {
 export type Action =
   | { type: "allow" }
   | { type: "block"; status: 403 | 404 | 410; body?: string }
-  | { type: "redirect"; status: 301 | 302 | 307 | 308; url: string; preservePath?: boolean }
+  | { type: "redirect"; status: 301 | 302 | 307 | 308; url: string; preservePath?: boolean; queryAllowlist?: string[] }
+  | { type: "split"; status: 302 | 307; key: SignalField; salt: string; targets: { url: string; weight: number }[]; fallbackUrl: string; queryAllowlist?: string[] }
   | { type: "route"; origin: string };
+
+export type ResolvedAction = Exclude<Action, { type: "split" }>;
 
 export interface Rule {
   id: string;
@@ -88,12 +89,12 @@ export interface PublishedConfig {
   version: number;
   domains: string[];
   defaultOrigin?: string;
-  defaultAction?: Extract<Action, { type: "redirect" }>;
+  defaultAction?: Extract<Action, { type: "redirect" | "split" }>;
   rules: Rule[];
   attribution?: AttributionConfig;
 }
 
-const operators = new Set<Operator>(["eq", "neq", "in", "notIn", "contains", "startsWith", "gte", "lte", "exists"]);
+const operators = new Set<Operator>(["eq", "neq", "in", "notIn", "contains", "startsWith", "gte", "lte", "exists", "inCidr", "notInCidr"]);
 const fields = new Set<string>(signalFields);
 const blockStatuses = new Set([403, 404, 410]);
 const redirectStatuses = new Set([301, 302, 307, 308]);
@@ -158,8 +159,13 @@ function parseCondition(value: unknown, path: string): Condition {
   if (typedOperator === "exists") {
     return { field: field as SignalField, operator: typedOperator };
   }
+  if (typedOperator === "inCidr" || typedOperator === "notInCidr") {
+    if (field !== "network.ip" || !Array.isArray(value.value) || !value.value.length || value.value.length > 1000 || !value.value.every((prefix) => typeof prefix === "string")) throw new Error(`${path}.value must contain IP prefixes on network.ip`);
+    for (const prefix of value.value) ipaddr.parseCIDR(prefix);
+    return { field, operator: typedOperator, value: value.value };
+  }
 
-  const numericField = temporalNumericFields.some((item) => item === field);
+  const numericField = field === "network.asn";
   if (typedOperator === "gte" || typedOperator === "lte") {
     if (!numericField || typeof value.value !== "number" || !Number.isFinite(value.value)) {
       throw new Error(`${path}.value must be a finite number on a numeric signal`);
@@ -170,14 +176,14 @@ function parseCondition(value: unknown, path: string): Condition {
     throw new Error(`${path}.operator is unsupported for this signal`);
   }
 
-  if (field === "client.automation" || field === "temporal.ready" || fingerprintBooleanFields.some((item) => item === field)) {
+  if (field === "client.automation" || field === "device.type" || fingerprintBooleanFields.some((item) => item === field)) {
     if (!["eq", "neq", "in", "notIn"].includes(typedOperator)) {
       throw new Error(`${path}.operator is unsupported for this signal`);
     }
     const values = Array.isArray(value.value) ? value.value : [value.value];
     const valid = values.every((item) => field === "client.automation"
       ? automationKinds.some((kind) => kind === item)
-      : typeof item === "boolean");
+      : field === "device.type" ? ["bot", "desktop", "mobile", "tablet"].includes(item as string) : typeof item === "boolean");
     if (!valid) throw new Error(`${path}.value has an invalid signal value`);
   }
 
@@ -188,11 +194,13 @@ function parseCondition(value: unknown, path: string): Condition {
     if (numericField && !value.value.every((item) => typeof item === "number")) {
       throw new Error(`${path}.value must contain only numbers`);
     }
+    if (!numericField && !fingerprintBooleanFields.some((item) => item === field) && !value.value.every((item) => typeof item === "string")) throw new Error(`${path}.value must contain only strings`);
     return { field: field as SignalField, operator: typedOperator, value: value.value };
   }
 
   if (!isScalar(value.value)) throw new Error(`${path}.value must be a scalar`);
   if (numericField && typeof value.value !== "number") throw new Error(`${path}.value must be a number`);
+  if (!numericField && !fingerprintBooleanFields.some((item) => item === field) && typeof value.value !== "string") throw new Error(`${path}.value must be a string`);
   return { field: field as SignalField, operator: typedOperator, value: value.value };
 }
 
@@ -229,6 +237,23 @@ export function parsePolicyAction(value: unknown, path: string): Action {
       status: value.status as 301 | 302 | 307 | 308,
       url: parseExternalUrl(value.url, `${path}.url`, false),
       ...(typeof value.preservePath === "boolean" ? { preservePath: value.preservePath } : {}),
+      ...(value.queryAllowlist === undefined ? {} : { queryAllowlist: parseQueryAllowlist(value.queryAllowlist, path) }),
+    };
+  }
+  if (type === "split") {
+    if (value.status !== 302 && value.status !== 307) throw new Error(`${path}.status must be 302 or 307`);
+    if (typeof value.key !== "string" || !fields.has(value.key)) throw new Error(`${path}.key is unsupported`);
+    const salt = requireString(value.salt, `${path}.salt`);
+    if (salt.length > 128) throw new Error(`${path}.salt is too long`);
+    if (!Array.isArray(value.targets) || value.targets.length < 2 || value.targets.length > 20) throw new Error(`${path}.targets must contain 2-20 targets`);
+    const targets = value.targets.map((target, index) => {
+      if (!isRecord(target) || !Number.isSafeInteger(target.weight) || (target.weight as number) < 1 || (target.weight as number) > 10_000) throw new Error(`${path}.targets[${index}].weight must be 1-10000`);
+      return { url: parseExternalUrl(target.url, `${path}.targets[${index}].url`, false), weight: target.weight as number };
+    });
+    if (new Set(targets.map((target) => target.url)).size !== targets.length) throw new Error(`${path}.targets URLs must be unique`);
+    return { type, status: value.status, key: value.key as SignalField, salt, targets,
+      fallbackUrl: parseExternalUrl(value.fallbackUrl, `${path}.fallbackUrl`, false),
+      ...(value.queryAllowlist === undefined ? {} : { queryAllowlist: parseQueryAllowlist(value.queryAllowlist, path) }),
     };
   }
   if (type === "route") {
@@ -266,6 +291,13 @@ function parseQueryParameterName(value: unknown, path: string): string {
     throw new Error(`${path} must be a valid query parameter name`);
   }
   return name;
+}
+
+function parseQueryAllowlist(value: unknown, path: string): string[] {
+  if (!Array.isArray(value) || value.length > 32) throw new Error(`${path}.queryAllowlist must have at most 32 names`);
+  const names = value.map((name, index) => parseQueryParameterName(name, `${path}.queryAllowlist[${index}]`));
+  if (new Set(names).size !== names.length) throw new Error(`${path}.queryAllowlist must be unique`);
+  return names;
 }
 
 function parseAttribution(value: unknown): AttributionConfig | undefined {
@@ -320,25 +352,26 @@ export function parsePublishedConfig(value: unknown): PublishedConfig {
   if (new Set(ruleIds).size !== ruleIds.length) throw new Error("rule ids must be unique");
 
   let defaultOrigin: string | undefined;
-  let defaultAction: Extract<Action, { type: "redirect" }> | undefined;
+  let defaultAction: Extract<Action, { type: "redirect" | "split" }> | undefined;
   if (value.schemaVersion === 1) {
     if (value.defaultAction !== undefined) throw new Error("schemaVersion 1 cannot use defaultAction");
     defaultOrigin = parseExternalUrl(value.defaultOrigin, "defaultOrigin", true);
   } else {
     if (value.defaultOrigin !== undefined) throw new Error("schemaVersion 2 cannot use defaultOrigin");
     const action = parsePolicyAction(value.defaultAction, "defaultAction");
-    if (action.type !== "redirect") throw new Error("defaultAction must be a redirect");
+    if (action.type !== "redirect" && action.type !== "split") throw new Error("defaultAction must be a redirect or split");
     if (rules.some((rule) => rule.action.type === "allow" || rule.action.type === "route")) {
-      throw new Error("schemaVersion 2 rules must redirect or block");
+      throw new Error("schemaVersion 2 rules must redirect or block (or split)");
     }
     defaultAction = action;
   }
   const destinationHosts = [
     ...(defaultOrigin ? [new URL(defaultOrigin).hostname] : []),
-    ...(defaultAction ? [new URL(defaultAction.url).hostname] : []),
+    ...(defaultAction ? actionHosts(defaultAction) : []),
     ...rules.flatMap((rule) => {
       if (rule.action.type === "route") return [new URL(rule.action.origin).hostname];
       if (rule.action.type === "redirect") return [new URL(rule.action.url).hostname];
+      if (rule.action.type === "split") return actionHosts(rule.action);
       return [];
     }),
   ];
@@ -366,5 +399,9 @@ export function parsePublishedConfig(value: unknown): PublishedConfig {
 }
 
 export function defaultTarget(config: PublishedConfig): string {
-  return config.schemaVersion === 2 ? config.defaultAction!.url : config.defaultOrigin!;
+  return config.schemaVersion === 2 ? config.defaultAction!.type === "split" ? config.defaultAction!.fallbackUrl : config.defaultAction!.url : config.defaultOrigin!;
+}
+
+function actionHosts(action: Extract<Action, { type: "redirect" | "split" }>): string[] {
+  return action.type === "redirect" ? [new URL(action.url).hostname] : [action.fallbackUrl, ...action.targets.map((target) => target.url)].map((url) => new URL(url).hostname);
 }

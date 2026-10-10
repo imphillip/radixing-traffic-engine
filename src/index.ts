@@ -2,12 +2,12 @@ export {
   signalFields,
   automationKinds,
   fingerprintBooleanFields,
-  temporalNumericFields,
   parsePublishedConfig,
   defaultTarget,
 } from "./policy.js";
 export type {
   Action,
+  ResolvedAction,
   AttributionConfig,
   AutomationKind,
   Condition,
@@ -34,37 +34,7 @@ export {
   BEHAVIOR_COOLDOWN_MS,
 } from "./behavior.js";
 export type { BehaviorState, BehaviorAssessment } from "./behavior.js";
-export {
-  JEV_MODEL,
-  JEV_FEATURE_VERSION,
-  JEV_MAX_RESPONSE_BYTES,
-  jevVisitorClasses,
-  JevGatewayError,
-  sanitizeJevFeatures,
-  parseJevClassification,
-  createOpenRouterJevGateway,
-} from "./jev.js";
-export type {
-  JevVisitorClass,
-  JevActionableClass,
-  JevFeatureState,
-  JevClassification,
-  JevGateway,
-  JevGatewayErrorCode,
-} from "./jev.js";
-export { parseJevDecisionPolicy, decideWithJev } from "./decision-flow.js";
-export type { JevDecisionPolicy, JevDecisionStatus, JevDecisionResult, JevDecisionInput } from "./decision-flow.js";
-export { parseRuleProposal, reviewRuleProposal, replayRuleProposal, reviewRuleSet } from "./rule-learning.js";
-export type {
-  RuleProposal,
-  ReplayCase,
-  RuleReplaySummary,
-  RuleReviewRecord,
-  RuleReviewIssue,
-  RuleSetReview,
-} from "./rule-learning.js";
-export { TEMPORAL_EVENT_VERSION, TEMPORAL_EVIDENCE_VERSION, advanceTemporalWindow, temporalSignals, replayTemporalProposal } from "./temporal.js";
-export type {
-  TemporalEvent, TemporalOptions, TemporalState, TemporalWindow, TemporalEvidence,
-  TemporalReplayCase, TemporalReplaySummary, TemporalCandidateProvider,
-} from "./temporal.js";
+export { compileFeatureSnapshot, parseFeatureSnapshot, parseIp, cidrRange } from "./features.js";
+export type { FeatureSnapshot, FeatureSource, AsnRange, CountryRange, CrawlerPattern, FeatureIndex } from "./features.js";
+export { createTds, enrichRequest } from "./tds.js";
+export type { TdsInput, TdsDecision, TdsOptions } from "./tds.js";

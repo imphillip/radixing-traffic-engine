@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 2,
+  "propertyId": "example",
+  "version": 1,
+  "domains": ["go.example.com"],
+  "defaultAction": {
+    "type": "redirect",
+    "status": 302,
+    "url": "https://www.example.com/",
+    "queryAllowlist": ["utm_source", "utm_medium", "utm_campaign"]
+  },
+  "rules": [
+    {
+      "id": "mobile-campaign",
+      "name": "Mobile campaign destination",
+      "enabled": true,
+      "priority": 10,
+      "match": "all",
+      "conditions": [
+        { "field": "device.type", "operator": "eq", "value": "mobile" },
+        { "field": "campaign.source", "operator": "eq", "value": "newsletter" }
+      ],
+      "action": {
+        "type": "redirect",
+        "status": 302,
+        "url": "https://app.example.com/mobile",
+        "queryAllowlist": ["utm_source", "utm_campaign"]
+      }
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      parsers:
+        patterns: [bowser, ipaddr.js, re2js, csv-parse, structured-headers]

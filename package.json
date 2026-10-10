@@ -1,7 +1,7 @@
 {
   "name": "@radixing/traffic-engine",
-  "version": "0.4.0",
-  "description": "Deterministic traffic policy and bounded temporal evidence engine for conditional delivery and WAF integrations",
+  "version": "1.0.0",
+  "description": "Deterministic traffic distribution system with automatically refreshed open network and user-agent data",
   "type": "module",
   "license": "MIT",
   "repository": "github:imphillip/radixing-traffic-engine",
@@ -13,7 +13,7 @@
     "traffic-cloaking",
     "bot-detection",
     "fingerprinting",
-    "jev",
+    "tds",
     "waf",
     "edge-computing"
   ],
@@ -23,20 +23,45 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "default": "./dist/node.js"
     }
   },
-  "files": ["dist", "docs"],
+  "bin": {
+    "radixing-tds": "./dist/cli.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "files": [
+    "dist",
+    "docs",
+    "examples",
+    "scripts/build.mjs",
+    "tsconfig*.json",
+    "src",
+    "THIRD_PARTY_NOTICES.md"
+  ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "node scripts/build.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "check": "npm run typecheck && npm test && npm run build",
-    "prepare": "npm run build"
+    "prepare": "npm run build",
+    "data:sync": "node dist/cli.js sync",
+    "start": "node dist/cli.js serve"
   },
   "dependencies": {
+    "bowser": "2.14.1",
+    "csv-parse": "7.0.3",
+    "ipaddr.js": "2.5.0",
+    "re2js": "2.8.6",
     "structured-headers": "2.0.3"
   },
   "devDependencies": {
+    "@types/node": "22.20.5",
     "typescript": "^7.0.2",
     "vitest": "^4.1.11"
   }

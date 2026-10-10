@@ -1,49 +1,51 @@
-# Architecture and host integration
+# Architecture
 
-This package selects actions and produces deterministic temporal evidence; the host application owns the request lifecycle. The static evaluator and window analysis have no network or storage dependencies. The optional Jev path makes a bounded model request only when the host calls `decideWithJev` with an eligible policy and a gateway.
-
-The temporal and rule-learning paths are separate from request handling. Hosts can advance bounded event streams, compare adjacent windows, generate declarative candidates from reviewed evidence, replay candidates on later events, and call `reviewRuleSet` for periodic hygiene. These pure functions neither change the published policy nor call a model. See [temporal analysis](temporal-analysis.md) and [rule learning and review](rule-learning.md).
+Radixing TDS 1.0 selects HTTP destinations from per-request facts and project configuration. It contains no model gateway, model-generated rules, learning scheduler or general event-stream processor.
 
 ```mermaid
-flowchart LR
-    A["Host collects trusted request signals"] --> B["Static first-match evaluation"]
-    B --> C{"Explicit Jev eligibility?"}
-    C -- "No" --> S["Selected static action"]
-    C -- "Yes" --> J["Jev classification gateway"]
-    J --> V{"Valid class and local mapping?"}
-    V -- "Yes, enforce mode" --> M["Selected mapped action"]
-    V -- "No, timeout, error, or observe mode" --> S
-    S --> X["Host executes one selected action"]
-    M --> X
-    A --> T["Versioned event stream and bounded window state"]
-    T --> C2["Temporal change evidence"]
-    C2 --> R["Candidate discovery and later-period replay"]
-    R --> P["Independent review and host publication"]
-    P --> B
+flowchart TB
+  subgraph Offline[Background data maintenance]
+    Feeds[IPtoASN / X4B / crawler-user-agents / optional DB-IP] --> Download[HTTPS fetch with deadlines and byte limits]
+    Download --> Parse[Structured parsing and validation]
+    Parse --> Check[Counts / ranges / regex / checksums]
+    Check --> Candidate[Complete candidate snapshot]
+    Candidate --> Activate[Atomic file activation]
+    Activate --> Previous[Previous snapshot and history]
+  end
+  subgraph Online[Request execution]
+    Ingress[Host-validated request and client IP] --> Enrich[Bounded request features]
+    Activate --> Index[Compiled local indexes]
+    Index --> Enrich
+    Enrich --> Policy[Ordered deterministic project rules]
+    Config[Versioned project configuration] --> Policy
+    Policy --> Matched{Rule matched?}
+    Matched -->|Yes| Action[Rule action]
+    Matched -->|No| Default[Explicit default action]
+    Action --> Resolve[Resolve fixed-key weighted split]
+    Default --> Resolve
+    Resolve --> Execute[Redirect or optional block]
+    Resolve --> Evidence[Config version / snapshot ID / rule ID]
+  end
 ```
 
-## Decision stages
+## Boundaries
 
-1. The host collects the request method, path, network and device observations it trusts. It may call `analyzeFingerprint`, `analyzeProbePath`, or `advanceBehavior` to derive versioned evidence. These helpers do not fetch an IP database or verify a visitor's identity.
-2. `parsePublishedConfig` validates a published snapshot. `evaluateRules` selects the first matching enabled rule, or the schema-specific default. `explainRules` adds a condition trace for simulation without including raw signal values.
-3. For an optional Jev decision, the host supplies a separate policy and calls `decideWithJev`. That function runs the same static evaluator first. Only explicitly selected GET redirects without known probe or path-enumeration evidence can reach the gateway. Valid classes can select an action only through a local mapping. All other cases return the static action. See [Jev decision gateway](jev-gateway.md).
-4. The host executes **only** `result.decision.action` (or the action from `evaluateRules`) and records the actual outcome separately. The engine does not issue HTTP redirects, proxy origin requests, persist events, or issue attribution IDs.
-5. Separately, `advanceTemporalWindow` produces versioned current/previous-window evidence from host-supplied opaque event keys. `temporalSignals` exposes change metrics only with complete, sufficiently sampled history. `replayTemporalProposal` evaluates a candidate on later chronological cases against the current static baseline. The host owns candidate selection, independent labels, cost evaluation and publication.
+The synchronous core validates policies, compiles data, derives request features, evaluates ordered rules and builds a Web `Response`. Inputs include an explicit evaluation time: freshness changes are therefore part of the input rather than hidden clock access. Compiled indexes are captured by the engine and cannot be altered by mutating the caller's original snapshot or policy.
 
-`decideWithJev` returns `staticDecision`, the selected `decision`, and a small Jev status record. In `observe` mode, `candidateDecision` is available for review while `decision` remains static. A classification label is evidence, not a verified visitor identity or proof of intent.
+The Node adapter owns downloading, decompression, files, timers and HTTP sockets. It keeps one compiled engine active, then swaps references after a complete candidate is validated. Requests already evaluating retain their previous engine. The updater publishes a complete snapshot; one failed source prevents publication. No request waits for a provider API.
 
-## Host responsibilities
+The host owns authenticated ingress, client IP trust, tenant isolation, project policy publication, TLS, operational limits, audit storage and retention. The standalone service loads one project policy at startup. Policy changes require a validated restart; data changes reload automatically. It does not provide a multi-tenant merchant control plane.
 
-| Concern | Host responsibility |
-| --- | --- |
-| Inputs | Validate the client IP from a trusted ingress, choose which headers and behavioral observations to use, and avoid passing credentials or customer data as signals. |
-| State | Scope behavior state by property and visitor key; control its lifetime and storage. `advanceBehavior` only transforms a state supplied by the host. |
-| Temporal streams | Normalize and version event keys, serialize state updates per property/stream, isolate tenants, retain ordered history, and handle late arrivals and evictions. |
-| Jev access | Supply the API key, rate and spend limits, circuit breaker, sampling policy, telemetry retention, and a reviewed local action mapping. |
-| Action execution | Apply redirects, blocks, allows or origin routing once; handle path/query forwarding, error responses and attribution outside this package. |
-| Release | Pin a reviewed engine commit, test with the host's real signal extraction, and deploy the host separately. A public package update does not change a running service. |
-| Rule learning | Store private evidence and reviewed labels, schedule incremental/full/incident jobs, run any rule-proposing model, shadow and approve candidates, publish immutable versions, and roll back when needed. |
+## Determinism and evidence
 
-The engine deliberately separates **observed evidence**, **selected action**, and **executed outcome**. For example, `request.probe: true` is an observation; it blocks only if a published rule selects a block action, and the host must still execute that action successfully.
+Rule priority is ascending and stable; equal priorities preserve configured array order. The first match is terminal. Missing facts cannot satisfy negative rules. Known-list misses mean no match in that dataset, not verified absence of VPNs or automation. IP network registration country is separate from geolocation.
 
-For policy fields, ordering, and action constraints, see the [policy reference](policy-reference.md). For the deliberately narrow probe catalog and its provenance, see [probe rule provenance](rule-provenance.md).
+Weighted split is resolved from a named signal, a fixed salt and integer weights, using version 1 UTF-8 FNV-1a assignment. It uses no randomness, cookies or inferred device identity. Missing keys use a required fallback URL. Assignment stability depends on stable input keys and unchanged salt/targets/weights. This hash is not suitable for authentication or secrets.
+
+Decision evidence contains policy version, snapshot ID, matching rule, evaluated conditions, stale sources, matched source IDs and parser version. It omits raw IP addresses, header values and campaign values. Applications can retain authorized request environment data separately, with their own credential exclusion and retention policy.
+
+## Edge integrations
+
+The core consumes Web Requests and JSON snapshots without importing Node APIs. A host can supply trusted `geo.*`, `network.asn` and organization observations. Those explicitly supplied facts override inferred values; URL hostname/path/method and validated client IP remain bound to the actual request.
+
+Global data downloads, decompression and filesystem operations belong to the Node adapter or an external data publisher. Full datasets are not automatically bundled into constrained worker isolates. Edge hosts can publish scoped snapshots and construct a fresh engine when a snapshot changes. Updating this repository does not upgrade any separately pinned hosted deployment.

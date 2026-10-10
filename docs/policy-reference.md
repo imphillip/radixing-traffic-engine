@@ -1,77 +1,66 @@
 # Policy and signal reference
 
-Pass an untrusted policy object through `parsePublishedConfig` before evaluation. A published snapshot has a `schemaVersion`, `propertyId`, positive `version`, managed ingress `domains`, ordered `rules`, and a schema-specific default. The package does not publish or store snapshots.
+Use `parsePublishedConfig` before evaluating supplied configuration. `createTds` accepts schema 2 and enforces a single DNS ingress hostname, HTTPS destinations without URL credentials, an explicit default and no destination back to the ingress hostname. Unknown fields are not evaluated; unsupported signal fields or operators reject a condition.
 
-## Policy versions
+Schema 1 remains available through `parsePublishedConfig`/`evaluateRules` for legacy embedding (`defaultOrigin`, `allow`, `route`). The standalone service does not proxy schema 1 policies. Schema 2 supports `redirect`, `split` and `block`; its default must be a redirect or split.
 
-| Field or behavior | Schema v1 | Schema v2 |
-| --- | --- | --- |
-| Default | `defaultOrigin`: an HTTPS origin used by the host for unmatched `allow`/proxy traffic | `defaultAction`: an explicit HTTPS redirect |
-| Unmatched decision | `{ action: { type: "allow" } }` | `{ action: defaultAction }` |
-| Rule actions | `allow`, `block`, `redirect`, `route` | `block`, `redirect` |
-| Ingress domains | One or more validated DNS hostnames | Exactly one validated DNS hostname |
+## Rules and fields
 
-Version 1 is retained for existing proxy-style policies. Version 2 does not silently proxy unmatched traffic. Both versions reject destinations that point back to a managed ingress domain. Redirect and route targets must be HTTPS without URL credentials; `route` accepts an origin only. The host decides how to execute an `allow` or `route` result.
+Enabled rules are evaluated by ascending integer priority. Equal priorities preserve configured order. The first match is terminal. `match: all` requires every condition; `match: any` requires one. An explicit default handles unmatched requests.
 
-This is a complete v2 policy with one explicit probe rule:
-
-```ts
-import { evaluateRules, parsePublishedConfig } from "@radixing/traffic-engine";
-
-const config = parsePublishedConfig({
-  schemaVersion: 2,
-  propertyId: "example",
-  version: 1,
-  domains: ["go.example.com"],
-  defaultAction: {
-    type: "redirect", status: 302, url: "https://app.example.com",
-  },
-  rules: [{
-    id: "sensitive-path",
-    name: "Sensitive path",
-    enabled: true,
-    priority: 10,
-    match: "all",
-    conditions: [{ field: "request.probe", operator: "eq", value: true }],
-    action: { type: "block", status: 404 },
-  }],
-});
-
-const decision = evaluateRules(config, {
-  "request.method": "GET",
-  "request.path": "/.env",
-  "request.probe": true,
-});
-// { ruleId: "sensitive-path", action: { type: "block", status: 404 } }
-```
-
-`request.probe` in this example must be supplied by the host, for example from `fingerprintSignals(analyzeFingerprint({ path }))`. The engine never infers it from `request.path` during rule evaluation.
-
-## Matching rules
-
-Enabled rules are evaluated by ascending numeric `priority`; equal priorities retain their configured array order. The first matching rule is terminal. `match: "all"` requires every condition, while `match: "any"` requires at least one. Disabled rules never match. `explainRules` reports which rules and conditions were evaluated, but omits the supplied signal values.
-
-Conditions use `eq`, `neq`, `in`, `notIn`, `contains`, `startsWith`, `gte`, `lte`, or `exists`. `gte` and `lte` require a finite numeric value and a numeric temporal metric. `in` and `notIn` require non-empty scalar arrays. A missing signal does not satisfy `neq`, `notIn`, `gte`, or `lte`; `exists` requires a present, non-empty value. `client.automation` and the boolean fingerprint and temporal readiness fields accept only equality or set operators with typed values.
-
-| Signal group | Supported fields |
+| Group | Fields |
 | --- | --- |
 | Geography | `geo.country`, `geo.region`, `geo.city` |
-| Network | `network.ip`, `network.asn`, `network.organization` |
-| Client and device | `client.bot`, `client.automation`, `client.headless`, `client.uaMismatch`, `device.type`, `device.os` |
-| Request | `request.hostname`, `request.path`, `request.probe`, `request.pathEnumeration`, `request.method`, `request.referrer` |
+| Network | `network.ip`, `network.asn`, `network.organization`, `network.country`, `network.vpn`, `network.datacenter` |
+| Client | `client.bot`, `client.automation`, `client.headless`, `client.uaMismatch`, `client.key` |
+| Device/browser | `device.type`, `device.os`, `browser.name`, `browser.version` |
+| Request | `request.hostname`, `request.path`, `request.method`, `request.referrer`, `request.probe`, `request.pathEnumeration` |
 | Campaign | `campaign.source`, `campaign.medium`, `campaign.name` |
-| Temporal change | `temporal.ready`, `temporal.requestRateRatio`, `temporal.repeatShareDelta`, `temporal.probeShareDelta`, `temporal.pathTransitionShareDelta`, `temporal.fingerprintShareDelta`, `temporal.peakMinuteRatio` |
 
-The host supplies these values. `network.ip` is not an IP reputation lookup; its trust depends on the host's ingress validation. `client.automation` is `declared`, `suspected`, or `unknown`, never a verified human/bot identity. Missing evidence should remain absent rather than being guessed as benign.
+`network.asn` is numeric. Flags are booleans, `device.type` is `bot`/`desktop`/`mobile`/`tablet`, and `client.automation` is `declared`/`suspected`/`unknown`. Other fields are strings. Parser-derived device/browser/OS labels follow Bowser. Region/city and client keys require host-supplied observations; standalone mode does not invent client identity or collect browser API fingerprints.
 
-Temporal fields are opt-in. Only `temporalSignals` should map complete, sufficiently sampled window evidence into rule inputs. A host must version its feature extraction and bind the state to its tenant/property before using these fields. `gte`/`lte` compare supplied numbers; they do not establish statistical significance or a safe enforcement threshold. See [temporal analysis](temporal-analysis.md).
+Campaign fields come from bounded `utm_source`, `utm_medium`, `utm_campaign` query values. Referrer extraction retains only origin and path, excluding credentials, query and fragment. These request claims are not authenticated ad-platform attribution.
 
-## Evidence and actions
+| Operator | Semantics |
+| --- | --- |
+| `eq`, `neq` | Typed exact equality/inequality |
+| `in`, `notIn` | Typed membership in a non-empty array |
+| `contains`, `startsWith` | Case-sensitive string comparison |
+| `gte`, `lte` | Numeric ASN comparison |
+| `exists` | Present and not an empty string |
+| `inCidr`, `notInCidr` | IPv4/IPv6 network membership; only on `network.ip`, using an array of CIDRs |
 
-`analyzeFingerprint` accepts bounded User-Agent, Client Hints brand/platform, and path inputs. It returns versioned automation, headless, mismatch and probe observations; `fingerprintSignals` maps the rule-relevant fields. `analyzeProbePath` recognizes a small, versioned set of sensitive path segments. `advanceBehavior` accepts host-maintained state, a path and time, then returns a path-enumeration assessment; its current window is 60 requests with at least 40 distinct paths in 15 seconds, followed by a 60-second cooldown. None of these observations blocks a request by itself.
+Missing facts do not satisfy negative comparisons. Boolean and enum fields accept equality/set operators or `exists`. There are no temporal or model-class signal fields in 1.0.
 
-`block` supports HTTP 403, 404 or 410 and an optional short body. `redirect` supports 301, 302, 307 or 308 and optional `preservePath`; the host implements path/query forwarding. `allow` and `route` are v1-only. Optional `attribution` configuration is parsed and retained with a policy, but click IDs, forwarding, persistence and callbacks belong to the host.
+## Redirects and blocks
 
-The optional Jev path uses a **separate** policy bound to the published `propertyId` and `version`; it does not add a new static rule operator. See [architecture and host integration](architecture.md) and [Jev decision gateway](jev-gateway.md) before connecting it to live requests.
+Redirect statuses: 301/302/307/308. `preservePath: true` appends the incoming pathname to the configured target path without changing target host. Queries are not forwarded implicitly. `queryAllowlist` specifies up to 32 parameter names; selected incoming values replace the same target parameter, preserving multiple values and unrelated configured parameters. Choose this allowlist to exclude credentials and sensitive values.
 
-A learned rule is also separate from the published snapshot until the host explicitly publishes a new version. `parseRuleProposal` validates a candidate against this policy schema, `replayRuleProposal` compares its hypothetical first-match effect with the current policy, and `reviewRuleSet` flags due/expired rules and exact duplicate or shadowed predicates. See [rule learning and review](rule-learning.md).
+Block statuses: 403/404/410, optional text body up to 500 characters. HEAD responses omit the body. HTTP execution accepts GET/HEAD only and rejects unconfigured hosts with 421. Redirect/block responses use `Cache-Control: no-store` because request features can select different actions.
+
+## Stable A/B split
+
+```json
+{
+  "type": "split",
+  "status": 302,
+  "key": "client.key",
+  "salt": "experiment-1",
+  "targets": [
+    { "url": "https://a.example.com/", "weight": 3 },
+    { "url": "https://b.example.com/", "weight": 1 }
+  ],
+  "fallbackUrl": "https://www.example.com/",
+  "queryAllowlist": ["utm_source"]
+}
+```
+
+There must be 2-20 unique targets with positive integer weights of 1-10000. Status is 302 or 307. The engine resolves the split to a concrete redirect using a fixed version 1 FNV-1a UTF-8 hash of `[salt, typeof key, key]`. It uses no random selection. Different keys distribute approximately according to weights; exact small-sample proportions are not guaranteed. Missing keys use `fallbackUrl`.
+
+The host supplies a stable `client.key` when visitor-level assignment is needed. Choosing `network.ip` groups requests by address and does not identify individual visitors behind NAT. Changing keys, salt, target order or weights can change assignment.
+
+## Explanation and supporting security
+
+`explainRules` returns matching rule/config version and condition outcomes without raw signal values. TDS adds snapshot ID, source freshness/membership evidence and parser version. `analyzeFingerprint` retains bounded header consistency and probe checks; `advanceBehavior` remains a separate optional host-state helper. Neither adds automatic blocking rules.
+
+Optional attribution configuration is retained for legacy hosts but does not enable tracking, cookies, callbacks or forwarding automatically. See [migration](migration-1.0.md) and [operations](operations.md).

@@ -1,7 +1,8 @@
-import type { Action, Condition, PublishedConfig, Rule, Scalar, TrafficSignals } from "./policy.js";
+import type { Action, ResolvedAction, Condition, PublishedConfig, Rule, Scalar, TrafficSignals } from "./policy.js";
+import ipaddr from "ipaddr.js";
 
 export interface RuleDecision {
-  action: Action;
+  action: ResolvedAction;
   ruleId?: string;
 }
 
@@ -53,6 +54,19 @@ export function matchesCondition(condition: Condition, signals: TrafficSignals):
       return typeof actual === "number" && typeof condition.value === "number" && Number.isFinite(actual) && actual >= condition.value;
     case "lte":
       return typeof actual === "number" && typeof condition.value === "number" && Number.isFinite(actual) && actual <= condition.value;
+    case "inCidr":
+    case "notInCidr": {
+      if (typeof actual !== "string" || !Array.isArray(condition.value)) return false;
+      try {
+        const address = ipaddr.process(actual);
+        const matched = condition.value.some((prefix) => {
+          if (typeof prefix !== "string") return false;
+          const [network, bits] = ipaddr.parseCIDR(prefix);
+          return address.kind() === network.kind() && address.match(network, bits);
+        });
+        return condition.operator === "inCidr" ? matched : !matched;
+      } catch { return false; }
+    }
   }
 }
 
@@ -82,11 +96,28 @@ function evaluate(config: PublishedConfig, signals: TrafficSignals, trace?: Rule
     const matched = testRule(rule, signals, conditions);
     trace?.push({ ruleId: rule.id, priority: rule.priority, status: matched ? "matched" : "not_matched", conditions: conditions ?? [] });
     if (matched) {
-      decision = { action: rule.action, ruleId: rule.id };
+      decision = { action: resolveAction(rule.action, signals), ruleId: rule.id };
       if (!trace) break;
     }
   }
-  return decision ?? { action: config.schemaVersion === 2 ? config.defaultAction! : { type: "allow" } };
+  return decision ?? { action: config.schemaVersion === 2 ? resolveAction(config.defaultAction!, signals) : { type: "allow" } };
+}
+
+function resolveAction(action: Action, signals: TrafficSignals): ResolvedAction {
+  if (action.type !== "split") return { ...action, ...(action.type === "redirect" && action.queryAllowlist ? { queryAllowlist: [...action.queryAllowlist] } : {}) };
+  const key = signals[action.key];
+  let url = action.fallbackUrl;
+  if (key !== undefined && key !== "") {
+    // Version 1 assignment: FNV-1a over UTF-8, fixed salt and typed key. Not an identity or security hash.
+    let hash = 2166136261;
+    for (const byte of new TextEncoder().encode(JSON.stringify([action.salt, typeof key, key]))) hash = Math.imul(hash ^ byte, 16777619) >>> 0;
+    let bucket = (hash / 4294967296) * action.targets.reduce((sum, target) => sum + target.weight, 0);
+    for (const target of action.targets) {
+      if (bucket < target.weight) { url = target.url; break; }
+      bucket -= target.weight;
+    }
+  }
+  return { type: "redirect", status: action.status, url, ...(action.queryAllowlist ? { queryAllowlist: [...action.queryAllowlist] } : {}) };
 }
 
 export function evaluateRules(config: PublishedConfig, signals: TrafficSignals): RuleDecision {
