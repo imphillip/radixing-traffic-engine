@@ -3,7 +3,7 @@
 [![CI](https://github.com/imphillip/radixing-traffic-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/imphillip/radixing-traffic-engine/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-A TypeScript traffic decision engine with deterministic rules and an optional Jev classification gateway. It parses versioned policies, derives narrow evidence from supplied request observations, and selects an explicit action with an optional explanation. It is the open-source decision core used by [Radixing](https://radixing.com).
+A TypeScript traffic decision engine with deterministic rules, bounded temporal evidence, and an optional Jev classification gateway. It parses versioned policies, derives evidence from supplied observations, and selects an explicit action with an optional explanation. It is the open-source decision core used by [Radixing](https://radixing.com).
 
 ## Where it fits
 
@@ -11,10 +11,12 @@ A TypeScript traffic decision engine with deterministic rules and an optional Je
 - **WAF integrations:** turn specific probe-path evidence into a policy signal and evaluate explicit block rules. This is not a managed WAF, IP reputation feed, challenge service, or DDoS defense.
 - **Bot-aware routing:** combine bounded User-Agent and Client Hints analysis with versioned probe and path-diversity evidence. `declared`, `suspected`, and `unknown` are observations, not verified visitor identities or automatic enforcement decisions.
 - **Policy simulation:** call `explainRules` to inspect the first matching rule and condition results without echoing raw signal values.
+- **Traffic history:** advance bounded per-stream state to compare adjacent request windows for changes in rate, path repetition, probes, transitions, and fingerprint concentration. Incomplete or sparse windows produce no rule signals.
+- **Forward validation:** replay a proposed rule chronologically on a later period, compare it with the static baseline, and count independently reviewed outcomes without using future events as features.
 - **Ambiguous visits:** call `decideWithJev` after static rules for explicitly selected redirect paths. A typed Jev class can map to an action through a versioned local policy; missing, weak, invalid, or late answers keep the static action.
 - **Rule learning:** validate model- or analyst-proposed rules against a published policy, replay them against reviewed cases, and inspect lifecycle issues before a host publishes a new version.
 
-The static evaluator performs no I/O. The optional OpenRouter Jev gateway makes one bounded model request only when the host calls the async decision flow. The library does not include a proxy, browser SDK, IP database, or merchant data. Hosts supply trusted observations, maintain behavioral state, enforce rate/circuit limits, execute the selected action, and record their own audit trail.
+The static evaluator and temporal analysis perform no I/O. The optional OpenRouter Jev gateway makes one bounded model request only when the host calls the async decision flow. The library does not include a proxy, browser SDK, IP database, or merchant data. Hosts supply trusted observations, isolate and persist state, enforce rate/circuit limits, execute the selected action, and record their own audit trail.
 
 ## Install
 
@@ -59,12 +61,15 @@ The optional [Jev gateway](docs/jev-gateway.md) includes a fixed OpenRouter Choi
 
 The optional [rule-learning workflow](docs/rule-learning.md) supports daily incremental discovery, full reviews on the 1st and 15th, and incident-triggered review. These are host-operated cadences, not background jobs in this package. `parseRuleProposal`, `replayRuleProposal`, and `reviewRuleSet` provide deterministic review inputs; they cannot publish or execute a new rule. Model classifications are discovery hints, not independently reviewed labels.
 
+The [temporal analysis contract](docs/temporal-analysis.md) adds versioned event/window evidence and chronological proposal replay. It starts with descriptive statistics and change detection; no model family is required. An optional model provider may propose candidates outside the request path, but neither a model label nor its confidence is ground truth. A package update does not change a host's live route or its pinned version.
+
 ## Documentation
 
 - [Architecture and host integration](docs/architecture.md): decision flow, execution boundary, and host responsibilities.
 - [Policy and signal reference](docs/policy-reference.md): schema versions, rule matching, evidence, and actions.
 - [Jev decision gateway](docs/jev-gateway.md): eligibility, local mapping, failure behavior, and privacy controls.
 - [Rule learning and review](docs/rule-learning.md): proposal schema, replay, lifecycle checks, cadence, and release boundaries.
+- [Temporal analysis](docs/temporal-analysis.md): event/state contract, window signals, forward replay, and Hosted integration boundary.
 - [Probe rule provenance](docs/rule-provenance.md): the narrow built-in probe catalog and its review sources.
 
 ## Development

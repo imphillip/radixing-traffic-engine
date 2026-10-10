@@ -49,6 +49,10 @@ export function matchesCondition(condition: Condition, signals: TrafficSignals):
       return typeof actual === "string" && typeof condition.value === "string" && actual.includes(condition.value);
     case "startsWith":
       return typeof actual === "string" && typeof condition.value === "string" && actual.startsWith(condition.value);
+    case "gte":
+      return typeof actual === "number" && typeof condition.value === "number" && Number.isFinite(actual) && actual >= condition.value;
+    case "lte":
+      return typeof actual === "number" && typeof condition.value === "number" && Number.isFinite(actual) && actual <= condition.value;
   }
 }
 

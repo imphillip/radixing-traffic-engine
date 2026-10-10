@@ -1,8 +1,8 @@
 # Architecture and host integration
 
-This package selects actions; the host application owns the request lifecycle. The static evaluator is deterministic and has no network or storage dependencies. The optional Jev path makes a bounded model request only when the host calls `decideWithJev` with an eligible policy and a gateway.
+This package selects actions and produces deterministic temporal evidence; the host application owns the request lifecycle. The static evaluator and window analysis have no network or storage dependencies. The optional Jev path makes a bounded model request only when the host calls `decideWithJev` with an eligible policy and a gateway.
 
-The rule-learning path is separate from request handling. Hosts can generate declarative candidates from reviewed evidence, use `parseRuleProposal` and `replayRuleProposal` to validate them, and call `reviewRuleSet` for periodic hygiene. These pure functions neither change the published policy nor call an LLM. See [rule learning and review](rule-learning.md) for the daily incremental, twice-monthly full-review and incident-triggered workflow.
+The temporal and rule-learning paths are separate from request handling. Hosts can advance bounded event streams, compare adjacent windows, generate declarative candidates from reviewed evidence, replay candidates on later events, and call `reviewRuleSet` for periodic hygiene. These pure functions neither change the published policy nor call a model. See [temporal analysis](temporal-analysis.md) and [rule learning and review](rule-learning.md).
 
 ```mermaid
 flowchart LR
@@ -15,6 +15,11 @@ flowchart LR
     V -- "No, timeout, error, or observe mode" --> S
     S --> X["Host executes one selected action"]
     M --> X
+    A --> T["Versioned event stream and bounded window state"]
+    T --> C2["Temporal change evidence"]
+    C2 --> R["Candidate discovery and later-period replay"]
+    R --> P["Independent review and host publication"]
+    P --> B
 ```
 
 ## Decision stages
@@ -23,6 +28,7 @@ flowchart LR
 2. `parsePublishedConfig` validates a published snapshot. `evaluateRules` selects the first matching enabled rule, or the schema-specific default. `explainRules` adds a condition trace for simulation without including raw signal values.
 3. For an optional Jev decision, the host supplies a separate policy and calls `decideWithJev`. That function runs the same static evaluator first. Only explicitly selected GET redirects without known probe or path-enumeration evidence can reach the gateway. Valid classes can select an action only through a local mapping. All other cases return the static action. See [Jev decision gateway](jev-gateway.md).
 4. The host executes **only** `result.decision.action` (or the action from `evaluateRules`) and records the actual outcome separately. The engine does not issue HTTP redirects, proxy origin requests, persist events, or issue attribution IDs.
+5. Separately, `advanceTemporalWindow` produces versioned current/previous-window evidence from host-supplied opaque event keys. `temporalSignals` exposes change metrics only with complete, sufficiently sampled history. `replayTemporalProposal` evaluates a candidate on later chronological cases against the current static baseline. The host owns candidate selection, independent labels, cost evaluation and publication.
 
 `decideWithJev` returns `staticDecision`, the selected `decision`, and a small Jev status record. In `observe` mode, `candidateDecision` is available for review while `decision` remains static. A classification label is evidence, not a verified visitor identity or proof of intent.
 
@@ -32,6 +38,7 @@ flowchart LR
 | --- | --- |
 | Inputs | Validate the client IP from a trusted ingress, choose which headers and behavioral observations to use, and avoid passing credentials or customer data as signals. |
 | State | Scope behavior state by property and visitor key; control its lifetime and storage. `advanceBehavior` only transforms a state supplied by the host. |
+| Temporal streams | Normalize and version event keys, serialize state updates per property/stream, isolate tenants, retain ordered history, and handle late arrivals and evictions. |
 | Jev access | Supply the API key, rate and spend limits, circuit breaker, sampling policy, telemetry retention, and a reviewed local action mapping. |
 | Action execution | Apply redirects, blocks, allows or origin routing once; handle path/query forwarding, error responses and attribution outside this package. |
 | Release | Pin a reviewed engine commit, test with the host's real signal extraction, and deploy the host separately. A public package update does not change a running service. |

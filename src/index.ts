@@ -2,6 +2,7 @@ export {
   signalFields,
   automationKinds,
   fingerprintBooleanFields,
+  temporalNumericFields,
   parsePublishedConfig,
   defaultTarget,
 } from "./policy.js";
@@ -62,3 +63,8 @@ export type {
   RuleReviewIssue,
   RuleSetReview,
 } from "./rule-learning.js";
+export { TEMPORAL_EVENT_VERSION, TEMPORAL_EVIDENCE_VERSION, advanceTemporalWindow, temporalSignals, replayTemporalProposal } from "./temporal.js";
+export type {
+  TemporalEvent, TemporalOptions, TemporalState, TemporalWindow, TemporalEvidence,
+  TemporalReplayCase, TemporalReplaySummary, TemporalCandidateProvider,
+} from "./temporal.js";

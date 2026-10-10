@@ -1,7 +1,7 @@
 {
   "name": "@radixing/traffic-engine",
-  "version": "0.3.0",
-  "description": "Deterministic traffic policy engine with optional Jev classification for cloaking workflows and WAF integrations",
+  "version": "0.4.0",
+  "description": "Deterministic traffic policy and bounded temporal evidence engine for conditional delivery and WAF integrations",
   "type": "module",
   "license": "MIT",
   "repository": "github:imphillip/radixing-traffic-engine",

@@ -20,6 +20,13 @@ export const signalFields = [
   "campaign.source",
   "campaign.medium",
   "campaign.name",
+  "temporal.ready",
+  "temporal.requestRateRatio",
+  "temporal.repeatShareDelta",
+  "temporal.probeShareDelta",
+  "temporal.pathTransitionShareDelta",
+  "temporal.fingerprintShareDelta",
+  "temporal.peakMinuteRatio",
 ] as const;
 
 export type SignalField = (typeof signalFields)[number];
@@ -28,6 +35,10 @@ export type DeviceType = "bot" | "desktop" | "mobile" | "tablet";
 export const automationKinds = ["declared", "suspected", "unknown"] as const;
 export type AutomationKind = (typeof automationKinds)[number];
 export const fingerprintBooleanFields = ["client.headless", "client.uaMismatch", "request.probe", "request.pathEnumeration"] as const;
+export const temporalNumericFields = [
+  "temporal.requestRateRatio", "temporal.repeatShareDelta", "temporal.probeShareDelta",
+  "temporal.pathTransitionShareDelta", "temporal.fingerprintShareDelta", "temporal.peakMinuteRatio",
+] as const;
 
 export type TrafficSignals = {
   [Field in SignalField]?: Scalar | undefined;
@@ -38,9 +49,10 @@ export type TrafficSignals = {
   "client.uaMismatch"?: boolean | undefined;
   "request.probe"?: boolean | undefined;
   "request.pathEnumeration"?: boolean | undefined;
+  "temporal.ready"?: boolean | undefined;
 };
 
-export type Operator = "eq" | "neq" | "in" | "notIn" | "contains" | "startsWith" | "exists";
+export type Operator = "eq" | "neq" | "in" | "notIn" | "contains" | "startsWith" | "gte" | "lte" | "exists";
 
 export interface Condition {
   field: SignalField;
@@ -81,7 +93,7 @@ export interface PublishedConfig {
   attribution?: AttributionConfig;
 }
 
-const operators = new Set<Operator>(["eq", "neq", "in", "notIn", "contains", "startsWith", "exists"]);
+const operators = new Set<Operator>(["eq", "neq", "in", "notIn", "contains", "startsWith", "gte", "lte", "exists"]);
 const fields = new Set<string>(signalFields);
 const blockStatuses = new Set([403, 404, 410]);
 const redirectStatuses = new Set([301, 302, 307, 308]);
@@ -91,7 +103,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isScalar(value: unknown): value is Scalar {
-  return typeof value === "string" || typeof value === "number" || typeof value === "boolean";
+  return typeof value === "string" || (typeof value === "number" && Number.isFinite(value)) || typeof value === "boolean";
 }
 
 function requireString(value: unknown, path: string): string {
@@ -147,7 +159,18 @@ function parseCondition(value: unknown, path: string): Condition {
     return { field: field as SignalField, operator: typedOperator };
   }
 
-  if (field === "client.automation" || fingerprintBooleanFields.some((item) => item === field)) {
+  const numericField = temporalNumericFields.some((item) => item === field);
+  if (typedOperator === "gte" || typedOperator === "lte") {
+    if (!numericField || typeof value.value !== "number" || !Number.isFinite(value.value)) {
+      throw new Error(`${path}.value must be a finite number on a numeric signal`);
+    }
+    return { field: field as SignalField, operator: typedOperator, value: value.value };
+  }
+  if (numericField && (typedOperator === "contains" || typedOperator === "startsWith")) {
+    throw new Error(`${path}.operator is unsupported for this signal`);
+  }
+
+  if (field === "client.automation" || field === "temporal.ready" || fingerprintBooleanFields.some((item) => item === field)) {
     if (!["eq", "neq", "in", "notIn"].includes(typedOperator)) {
       throw new Error(`${path}.operator is unsupported for this signal`);
     }
@@ -162,10 +185,14 @@ function parseCondition(value: unknown, path: string): Condition {
     if (!Array.isArray(value.value) || value.value.length === 0 || !value.value.every(isScalar)) {
       throw new Error(`${path}.value must be a non-empty scalar array`);
     }
+    if (numericField && !value.value.every((item) => typeof item === "number")) {
+      throw new Error(`${path}.value must contain only numbers`);
+    }
     return { field: field as SignalField, operator: typedOperator, value: value.value };
   }
 
   if (!isScalar(value.value)) throw new Error(`${path}.value must be a scalar`);
+  if (numericField && typeof value.value !== "number") throw new Error(`${path}.value must be a number`);
   return { field: field as SignalField, operator: typedOperator, value: value.value };
 }
 

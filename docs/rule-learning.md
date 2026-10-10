@@ -79,7 +79,7 @@ The source reference and evidence IDs must be opaque identifiers, not raw IP add
 
 ## Replay and promotion
 
-`replayRuleProposal` appends the candidate to a temporary copy of the policy and evaluates every supplied case with the existing first-match ordering. Its aggregate result includes candidate matches, actual selections, changed actions, reviewed cases and newly blocked reviewed-legitimate cases. It returns no case signals or IP values. A match can be shadowed by an earlier rule, so `matched` and `selected` are intentionally separate.
+`replayRuleProposal` appends the candidate to a temporary copy of the policy and evaluates every supplied case with the existing first-match ordering. Its aggregate result includes candidate matches, actual selections, changed actions, reviewed cases and newly blocked reviewed-legitimate cases. It returns no case signals or IP values. A match can be shadowed by an earlier rule, so `matched` and `selected` are intentionally separate. For proposed temporal rules, `replayTemporalProposal` first derives complete window features from chronological events, then scores only a later validation period. See [temporal analysis](temporal-analysis.md).
 
 `reviewedLabel` means an independently reviewed case. Jev or another model's class is a useful discovery hint, but is not a reviewed label and must not be copied into this field without independent verification. The summary is evidence for a release review, not a calibrated accuracy score. Hosts should also inspect representative counterexamples and behavior after a shadow or scoped canary before publishing any traffic-changing rule. When the base policy changes, regenerate or revalidate the proposal against the new version.
 

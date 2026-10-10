@@ -51,7 +51,7 @@ const decision = evaluateRules(config, {
 
 Enabled rules are evaluated by ascending numeric `priority`; equal priorities retain their configured array order. The first matching rule is terminal. `match: "all"` requires every condition, while `match: "any"` requires at least one. Disabled rules never match. `explainRules` reports which rules and conditions were evaluated, but omits the supplied signal values.
 
-Conditions use `eq`, `neq`, `in`, `notIn`, `contains`, `startsWith`, or `exists`. `in` and `notIn` require non-empty scalar arrays. A missing signal does not satisfy `neq` or `notIn`; `exists` requires a present, non-empty value. `client.automation` and the boolean fingerprint fields accept only equality or set operators with typed values.
+Conditions use `eq`, `neq`, `in`, `notIn`, `contains`, `startsWith`, `gte`, `lte`, or `exists`. `gte` and `lte` require a finite numeric value and a numeric temporal metric. `in` and `notIn` require non-empty scalar arrays. A missing signal does not satisfy `neq`, `notIn`, `gte`, or `lte`; `exists` requires a present, non-empty value. `client.automation` and the boolean fingerprint and temporal readiness fields accept only equality or set operators with typed values.
 
 | Signal group | Supported fields |
 | --- | --- |
@@ -60,8 +60,11 @@ Conditions use `eq`, `neq`, `in`, `notIn`, `contains`, `startsWith`, or `exists`
 | Client and device | `client.bot`, `client.automation`, `client.headless`, `client.uaMismatch`, `device.type`, `device.os` |
 | Request | `request.hostname`, `request.path`, `request.probe`, `request.pathEnumeration`, `request.method`, `request.referrer` |
 | Campaign | `campaign.source`, `campaign.medium`, `campaign.name` |
+| Temporal change | `temporal.ready`, `temporal.requestRateRatio`, `temporal.repeatShareDelta`, `temporal.probeShareDelta`, `temporal.pathTransitionShareDelta`, `temporal.fingerprintShareDelta`, `temporal.peakMinuteRatio` |
 
 The host supplies these values. `network.ip` is not an IP reputation lookup; its trust depends on the host's ingress validation. `client.automation` is `declared`, `suspected`, or `unknown`, never a verified human/bot identity. Missing evidence should remain absent rather than being guessed as benign.
+
+Temporal fields are opt-in. Only `temporalSignals` should map complete, sufficiently sampled window evidence into rule inputs. A host must version its feature extraction and bind the state to its tenant/property before using these fields. `gte`/`lte` compare supplied numbers; they do not establish statistical significance or a safe enforcement threshold. See [temporal analysis](temporal-analysis.md).
 
 ## Evidence and actions
 
