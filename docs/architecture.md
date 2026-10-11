@@ -1,6 +1,6 @@
 # Architecture
 
-Radixing TDS 1.1 selects HTTP destinations from per-request facts and project configuration. Standard scanner protection precedes project routing. It contains no model gateway, model-generated rules, learning scheduler or general event-stream processor.
+Radixing TDS 1.2 selects HTTP destinations from per-request facts and project configuration. Standard scanner protection precedes project routing. It contains no model gateway, model-generated rules, learning scheduler or general event-stream processor.
 
 The architecture has three independently managed inputs: engine/parser code, versioned feature data, and project policy. Upstream data maintenance refreshes facts; project configuration selects destinations; scanner guards handle a narrow set of exposure and enumeration patterns. Neither a dataset refresh nor a model proposes new rules in the current engine.
 
@@ -72,4 +72,4 @@ For example, a newly listed VPN prefix can change routing only when a project ru
 
 The core consumes Web Requests and JSON snapshots without importing Node APIs. A host can supply trusted `geo.*`, `network.asn` and organization observations. Those explicitly supplied facts override inferred values; URL hostname/path/method and validated client IP remain bound to the actual request.
 
-Global data downloads, decompression and filesystem operations belong to the Node adapter or an external data publisher. Full datasets are not automatically bundled into constrained worker isolates. Edge hosts can publish scoped snapshots and construct a fresh engine when a snapshot changes. Updating this repository does not upgrade any separately pinned hosted deployment.
+Global data downloads and filesystem operations belong to the Node adapter or a suitably sized data publisher. For small selected feeds, the [portable Web builder](web-updater.md) shares Node's source adapters but uses Web Crypto and bounded Compression Streams in a host-owned background job. It requires explicit source selection and leaves shard/index acceptance to a host hook, avoiding whole-snapshot lookup compilation. Full datasets are not automatically bundled into constrained worker isolates. Edge hosts can publish scoped snapshots and construct a fresh engine when a snapshot changes. Updating this repository does not upgrade any separately pinned hosted deployment.

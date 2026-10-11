@@ -5,7 +5,7 @@
 
 A deterministic **Traffic Distribution System (TDS)** for paid-traffic ingress, A/B destinations and conditional redirects. Open IP, network and crawler datasets supply local request features; explicit project rules select a destination. Scanner protection is included by default. Run the Node.js redirect service or embed the TypeScript decision core.
 
-**Version 1.1.0 uses no Jev, LLM, model providers or API keys.** Identical policy, data snapshot, request observations and evaluation time produce identical decisions. Deterministic matching does not make upstream labels, User-Agent claims or inferred locations infallible.
+**Version 1.2.0 uses no Jev, LLM, model providers or API keys.** Identical policy, data snapshot, request observations and evaluation time produce identical decisions. Deterministic matching does not make upstream labels, User-Agent claims or inferred locations infallible.
 
 ## Use cases
 
@@ -76,7 +76,7 @@ Local files default to `.tds-data/`; use persistent storage across restarts. The
 - Redirects with explicit query forwarding and optional path forwarding.
 - Default sensitive-path blocking and bounded standalone path-enumeration protection before project routing.
 - Checksummed data snapshots, atomic activation, previous-version rollback and source freshness evidence.
-- A standalone Node.js service with scheduled refresh and a separately importable synchronous core.
+- A standalone Node.js service with scheduled refresh, a synchronous core, and a portable Web data builder for host-owned background jobs.
 
 Network and bot labels never block traffic automatically. Sensitive exposure targets return 404. Enumeration returns 403 after 60 requests covering at least 40 paths within 15 seconds, followed by a fixed 60-second cooldown. See [scanner protection](docs/scanner-protection.md) for explicit overrides, tracking capacity, shared-IP limitations and host responsibilities. Browser Canvas/WebGL collection and distributed abuse prevention are outside this release.
 
@@ -87,7 +87,7 @@ Requires Node.js 22 or later.
 ```sh
 git clone https://github.com/imphillip/radixing-traffic-engine.git
 cd radixing-traffic-engine
-git checkout v1.1.0
+git checkout v1.2.0
 npm ci
 npm run data:sync
 npm start -- --policy examples/policy.json --data .tds-data
@@ -117,7 +117,7 @@ Country mode must be used consistently for sync and serve. With country mode, th
 The package is distributed through GitHub and release assets, not the npm registry. Pin a tag or a full commit for production builds.
 
 ```sh
-npm install git+https://github.com/imphillip/radixing-traffic-engine.git#v1.1.0
+npm install git+https://github.com/imphillip/radixing-traffic-engine.git#v1.2.0
 ```
 
 ```ts
@@ -134,12 +134,15 @@ const { response, decision } = tds.handle({
 
 `@radixing/traffic-engine/node` exports the updater, snapshot loader, rollback and standalone server. The core import has no Node.js dependencies and performs no I/O. Full global ASN snapshots can consume substantial memory; constrained edge integrations should use scoped datasets or host-supplied trusted ASN/geolocation observations. The library never trusts forwarded-IP headers by itself.
 
+`@radixing/traffic-engine/web` exports a background snapshot builder using Fetch, Web Crypto and Compression Streams, without Node runtime imports. Select feeds explicitly; for example, a constrained updater can fetch only VPN, datacenter and crawler data. It shares adapters and schema-1 checksums with Node but does not compile a complete lookup index. Hosts validate their shards before publication and own scheduling, storage, locking and activation. See the [portable updater contract](docs/web-updater.md).
+
 For weighted visitor assignment, supply a stable `clientKey`; the service does not invent visitor identity. A missing split key follows the policy's explicit fallback. To add enumeration in an embedded host, maintain isolated state and supply `trustedSignals["request.pathEnumeration"]`; see the [host contract](docs/scanner-protection.md#embedded-host-contract).
 
 ## Documentation
 
 - [Architecture](docs/architecture.md): data plane, execution and host responsibilities.
 - [Deployment modes](docs/deployment.md): standalone, embedded Node and edge integration responsibilities.
+- [Portable Web updater and 1.2 migration](docs/web-updater.md): bounded background builds and host-owned shard acceptance.
 - [Open data sources](docs/data-sources.md): formats, licenses, provenance, coverage and update validation.
 - [Policy reference](docs/policy-reference.md): fields, matching, stable split and action semantics.
 - [Operations](docs/operations.md): automatic refresh, rollback, reverse proxy and deployment.
