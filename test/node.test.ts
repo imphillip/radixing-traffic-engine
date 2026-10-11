@@ -92,6 +92,44 @@ describe("automated data lifecycle", () => {
 });
 
 describe("standalone TDS", () => {
+  it("applies standard scan defenses over HTTP while ignoring query diversity and untrusted source claims", async () => {
+    const path = await directory(), policyPath = join(path, "policy.json"), events: Record<string, unknown>[] = [];
+    await writeFile(policyPath, JSON.stringify(policy));
+    const runtime = await startTdsServer({ policyPath, dataDirectory: path, port: 0, sync: options(),
+      trustedProxyPeers: ["127.0.0.1"], clientIpHeader: "x-real-ip", maxTrackedSources: 2,
+      onEvent: (event) => events.push(event) });
+    try {
+      const address = runtime.server.address(); if (!address || typeof address === "string") throw new Error("Missing address");
+      const base = `http://127.0.0.1:${address.port}`;
+      const headers = { host: "go.example.com", "x-real-ip": "192.0.2.1" };
+      expect((await wire(`${base}/unconfigured`, { headers: { ...headers, host: "unknown.example.com" } })).status).toBe(421);
+      for (const method of ["GET", "HEAD", "POST"]) expect((await wire(`${base}/%252eenv`, { headers, method })).status).toBe(404);
+      const repeated = { host: "go.example.com", "x-real-ip": "192.0.2.2" };
+      for (let index = 0; index < 65; index++) expect((await wire(`${base}/landing?utm_source=${index}`, { headers: repeated })).status).toBe(302);
+      // The initial GET and HEAD probes already contributed two requests to this source.
+      for (let index = 0; index < 56; index++) expect((await wire(`${base}/p-${index}`, { headers })).status).toBe(302);
+      expect((await wire(`${base}/p-56`, { headers })).status).toBe(302);
+      const triggered = await wire(`${base}/p-57`, { headers });
+      expect(triggered.status).toBe(403); expect(triggered.headers.get("location")).toBeNull();
+      await runtime.refresh();
+      expect((await wire(`${base}/`, { headers })).status).toBe(403);
+      expect((await wire(`${base}/landing`, { headers: repeated })).status).toBe(302);
+      expect((await wire(`${base}/`, { headers: { ...headers, "x-real-ip": "192.0.2.3" } })).status).toBe(302);
+      expect(events.some((event) => event.behaviorAvailable === false)).toBe(true);
+      expect(events.some((event) => (event.protection as { kind?: string } | undefined)?.kind === "path-enumeration")).toBe(true);
+      expect(JSON.stringify(events)).not.toContain("192.0.2.");
+      expect(JSON.stringify(events)).not.toContain("utm_source");
+    } finally { await runtime.close(); }
+  });
+  it("supports explicit standalone scanner protection opt-outs", async () => {
+    const path = await directory(), policyPath = join(path, "policy.json");
+    await writeFile(policyPath, JSON.stringify(policy));
+    const runtime = await startTdsServer({ policyPath, dataDirectory: path, port: 0, sync: options(), scannerProtection: { sensitivePaths: false, pathEnumeration: false } });
+    try {
+      const address = runtime.server.address(); if (!address || typeof address === "string") throw new Error("Missing address");
+      expect((await wire(`http://127.0.0.1:${address.port}/.env`, { headers: { host: "go.example.com" } })).status).toBe(302);
+    } finally { await runtime.close(); }
+  });
   it("serves real redirects, rejects forged ingress and untrusted IP headers, and preserves service after failed refresh", async () => {
     const path = await directory(), policyPath = join(path, "policy.json"), events: Record<string, unknown>[] = [];
     const configured = { ...policy, rules: [{ id: "network", name: "Network", enabled: true, priority: 1, match: "all", conditions: [{ field: "network.vpn", operator: "eq", value: true }], action: { type: "redirect", status: 302, url: "https://app.example.com/" } }] };
@@ -108,6 +146,7 @@ describe("standalone TDS", () => {
       expect((await wire(url, { method: "POST", headers: { host: "go.example.com" } })).status).toBe(405);
       fail = true; await expect(runtime.refresh()).rejects.toThrow("HTTP 503");
       expect((await wire(url, { headers: { host: "go.example.com" } })).status).toBe(302);
+      expect((await wire(`${url}.env`, { headers: { host: "go.example.com" } })).status).toBe(404);
       expect(JSON.stringify(events)).not.toContain("192.0.2.200"); expect(JSON.stringify(events)).not.toContain("Bearer");
     } finally { await runtime.close(); }
   });

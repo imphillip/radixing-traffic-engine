@@ -6,7 +6,10 @@ import { createServer, type IncomingMessage, type Server } from "node:http";
 import { parse } from "csv-parse/sync";
 import { RE2JS } from "re2js";
 import { compileFeatureSnapshot, parseFeatureSnapshot, type AsnRange, type CountryRange, type CrawlerPattern, type FeatureSnapshot, type FeatureSource } from "./features.js";
-import { createTds } from "./tds.js";
+import { createTds, type ScannerProtectionOptions } from "./tds.js";
+import { parsePublishedConfig } from "./policy.js";
+import { createScannerTracker } from "./scanner-tracker.js";
+export { createScannerTracker } from "./scanner-tracker.js";
 
 export interface SourceDefinition {
   id: FeatureSource["id"];
@@ -178,6 +181,8 @@ export interface ServerOptions {
   refreshIntervalMs?: number;
   reloadIntervalMs?: number;
   maxDataAgeMs?: number;
+  scannerProtection?: ScannerProtectionOptions;
+  maxTrackedSources?: number;
   sync?: SyncOptions;
   /** Exact socket-peer addresses allowed to supply a single client IP header. */
   trustedProxyPeers?: string[];
@@ -185,13 +190,15 @@ export interface ServerOptions {
   onEvent?: (event: Record<string, unknown>) => void;
 }
 export async function startTdsServer(options: ServerOptions): Promise<{ server: Server; refresh(): Promise<void>; close(): Promise<void> }> {
-  const policy = JSON.parse(await readFile(options.policyPath, "utf8"));
+  const policy = parsePublishedConfig(JSON.parse(await readFile(options.policyPath, "utf8")));
   const path = resolve(options.dataDirectory, "current.json");
   let snapshot: FeatureSnapshot;
   try { snapshot = await loadFeatureSnapshot(path); }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; snapshot = await syncFeatureData(options.dataDirectory, options.sync); }
-  const settings = options.maxDataAgeMs === undefined ? {} : { maxDataAgeMs: options.maxDataAgeMs };
+  const settings = { ...(options.maxDataAgeMs === undefined ? {} : { maxDataAgeMs: options.maxDataAgeMs }),
+    ...(options.scannerProtection ? { scannerProtection: { ...options.scannerProtection } } : {}) };
   let engine = createTds(policy, snapshot, settings);
+  const tracker = createScannerTracker(options.maxTrackedSources);
   let busy = false;
   const emit = (event: Record<string, unknown>) => { try { options.onEvent?.(event); } catch { /* Observability must not change execution. */ } };
   async function refresh(): Promise<void> {
@@ -225,11 +232,15 @@ export async function startTdsServer(options: ServerOptions): Promise<{ server: 
       for (const [name, value] of Object.entries(incoming.headers)) if (value !== undefined) headers.set(name, Array.isArray(value) ? value.join(",") : value);
       const request = new Request(`https://${host}${incoming.url}`, { method: incoming.method ?? "GET", headers });
       const ip = clientIp(incoming);
-      const result = engine.handle({ request, ...(ip ? { ip } : {}), now: Date.now() });
+      const now = Date.now(), entry = new URL(request.url);
+      const eligible = settings.scannerProtection?.pathEnumeration !== false && policy.domains.includes(entry.hostname.toLowerCase()) && ["GET", "HEAD"].includes(request.method);
+      const behavior = eligible ? tracker.observe(entry.hostname, ip, entry.pathname, now) : undefined;
+      const result = engine.handle({ request, ...(ip ? { ip } : {}), now,
+        ...(behavior ? { trustedSignals: { "request.pathEnumeration": behavior.pathEnumeration } } : {}) });
       outgoing.writeHead(result.response.status, Object.fromEntries(result.response.headers));
       void result.response.text().then((body) => outgoing.end(body), () => outgoing.end());
       // Decision events contain versions and rule IDs, never raw IP, UA, URL queries or credentials.
-      emit({ type: "decision", status: result.response.status, ...(result.decision ? { ruleId: result.decision.ruleId ?? null, configVersion: result.decision.evaluation.configVersion, ...result.decision.evidence } : {}) });
+      emit({ type: "decision", status: result.response.status, ...(eligible ? { behaviorAvailable: behavior !== undefined } : {}), ...(result.decision ? { ruleId: result.decision.ruleId ?? null, configVersion: result.decision.evaluation.configVersion, ...result.decision.evidence } : {}) });
     } catch { outgoing.writeHead(500, { "cache-control": "no-store" }); outgoing.end("TDS execution failed"); }
   });
   server.requestTimeout = 10_000; server.headersTimeout = 10_000;

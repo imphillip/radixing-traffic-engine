@@ -22,6 +22,12 @@ npm start -- --trusted-proxy 127.0.0.1 --client-ip-header x-real-ip
 
 Peer comparison is exact, including IPv4-mapped IPv6 spelling when applicable. Lists of forwarded addresses are not accepted. An absent, invalid or multi-address trusted header leaves client IP unknown. Do not configure a public listener to trust arbitrary peers. The core takes `ip` explicitly from the host rather than guessing its trust from headers.
 
+## Default scanner protection
+
+Sensitive-file probes return 404 before project routing. The standalone runtime also tracks path enumeration by ingress hostname and trusted IP, returning 403 after 60 requests covering at least 40 paths in 15 seconds, with a fixed 60-second cooldown. Tracking is bounded to 4096 sources by default and survives dataset swaps; it is process-local and resets on restart. Read [scanner protection](scanner-protection.md) before using this ingress guard on shared-IP or asset/API workloads.
+
+`--max-tracked-sources COUNT` changes capacity. `--no-sensitive-path-protection` and `--no-path-enumeration-protection` independently disable the corresponding default guard when explicitly needed. Neither changes explicit project rules. New sources at capacity or sources without a valid trusted IP receive no enumeration evidence; sensitive-path checks and project routing continue.
+
 ## Updates and rollback
 
 Default automatic refresh interval: 24 hours. Maximum source age: 168 hours. External file reload interval: 60 seconds. No background scheduler or remote provider is used by the synchronous core.
@@ -42,11 +48,11 @@ If no snapshot exists, startup requires a successful sync. A malformed or corrup
 
 ## Observability and privacy
 
-Standalone stdout emits listening, update, reload and decision events. Decision events include response status, rule ID, policy version, snapshot ID and source evidence. They omit raw IP, UA, request queries and authorization headers. Model calls and API-key configuration do not exist in 1.0.
+Standalone stdout emits listening, update, reload and decision events. Decision events include response status, rule ID, policy version, snapshot ID and source evidence. Protection blocks include versioned `protection` evidence and `parser: null`; eligible requests expose `behaviorAvailable` so missing IP or tracking saturation is visible. They omit raw IP, path, UA, request queries and authorization headers. Model calls and API-key configuration do not exist.
 
 Applications that need actual IP/environment storage can collect it separately within their authorized boundary. Exclude credentials, request bodies and sensitive query values. Dataset metadata is public-source operational information, not visitor data.
 
-`startTdsServer` accepts an `onEvent` callback; callback failures do not alter routing. Export versions/statuses to your own monitoring. Repeated refresh failures, increasing stale sources and disk/memory exhaustion require operator attention.
+`startTdsServer` accepts an `onEvent` callback; callback failures do not alter routing. Export versions/statuses to your own monitoring. Repeated refresh failures, increasing stale sources, unavailable behavior tracking and disk/memory exhaustion require operator attention.
 
 ## Refresh configuration
 

@@ -3,6 +3,14 @@ import { explainRules, type RuleExplanation } from "./evaluator.js";
 import { analyzeFingerprint, fingerprintSignals } from "./fingerprint.js";
 import { compileFeatureSnapshot, parseIp, type FeatureIndex } from "./features.js";
 import { parsePublishedConfig, type TrafficSignals } from "./policy.js";
+import { analyzeProbePath, type ProbeRuleId } from "./probe-rules.js";
+import { BEHAVIOR_VERSION } from "./behavior.js";
+
+export const SCANNER_PROTECTION_VERSION = 1 as const;
+export interface ScannerProtectionOptions {
+  sensitivePaths?: boolean;
+  pathEnumeration?: boolean;
+}
 
 export interface TdsInput {
   request: Request;
@@ -12,9 +20,18 @@ export interface TdsInput {
   trustedSignals?: TrafficSignals;
   now: number;
 }
-export interface TdsOptions { maxDataAgeMs?: number }
+export interface TdsOptions { maxDataAgeMs?: number; scannerProtection?: ScannerProtectionOptions }
 export interface TdsDecision extends RuleExplanation {
-  evidence: { snapshotId: string; staleSources: string[]; matchedSources: string[]; parser: "bowser@2.14.1" };
+  evidence: {
+    snapshotId: string; staleSources: string[]; matchedSources: string[]; parser: "bowser@2.14.1" | null;
+    protection?: {
+      version: typeof SCANNER_PROTECTION_VERSION;
+      kind: "sensitive-path" | "path-enumeration";
+      probeRule?: ProbeRuleId;
+      probeRulesetVersion?: number;
+      behaviorVersion?: number;
+    };
+  };
 }
 export function enrichRequest(input: TdsInput, features: FeatureIndex, maxDataAgeMs = 7 * 86_400_000): { signals: TrafficSignals; evidence: TdsDecision["evidence"] } {
   if (!Number.isFinite(input.now) || !Number.isFinite(maxDataAgeMs) || maxDataAgeMs < 1) throw new Error("Invalid feature clock or maximum age");
@@ -53,14 +70,37 @@ export function createTds(policy: unknown, snapshot: unknown, options: TdsOption
   const config = parsePublishedConfig(policy);
   if (config.schemaVersion !== 2) throw new Error("TDS requires schemaVersion 2; legacy evaluation remains available separately");
   const features = compileFeatureSnapshot(snapshot);
+  const maxDataAgeMs = options.maxDataAgeMs ?? 7 * 86_400_000;
+  if (!Number.isFinite(maxDataAgeMs) || maxDataAgeMs < 1) throw new Error("Invalid maximum feature age");
+  const protection = { sensitivePaths: true, pathEnumeration: true, ...options.scannerProtection };
+  if (typeof protection.sensitivePaths !== "boolean" || typeof protection.pathEnumeration !== "boolean") throw new Error("Invalid scanner protection options");
+  function protect(input: TdsInput): TdsDecision | undefined {
+    let detail: NonNullable<TdsDecision["evidence"]["protection"]> | undefined;
+    if (protection.pathEnumeration && input.trustedSignals?.["request.pathEnumeration"] === true) {
+      detail = { version: SCANNER_PROTECTION_VERSION, kind: "path-enumeration", behaviorVersion: BEHAVIOR_VERSION };
+    } else if (protection.sensitivePaths) {
+      const probe = analyzeProbePath(new URL(input.request.url).pathname);
+      if (probe?.probe) detail = { version: SCANNER_PROTECTION_VERSION, kind: "sensitive-path", probeRule: probe.rule!, probeRulesetVersion: probe.version };
+    }
+    if (!detail) return undefined;
+    return {
+      action: { type: "block", status: detail.kind === "path-enumeration" ? 403 : 404 },
+      ruleId: detail.probeRule ? `builtin:probe:${detail.probeRule}` : "builtin:path-enumeration",
+      evaluation: { version: 1, configVersion: config.version, source: "protection", rules: [] },
+      evidence: { snapshotId: features.id, staleSources: [], matchedSources: [], parser: null, protection: detail },
+    };
+  }
   function decide(input: TdsInput): TdsDecision {
     if (!config.domains.includes(new URL(input.request.url).hostname.toLowerCase())) throw new Error("Unconfigured ingress hostname");
-    const { signals, evidence } = enrichRequest(input, features, options.maxDataAgeMs);
+    if (!Number.isFinite(input.now)) throw new Error("Invalid feature clock");
+    const guarded = protect(input);
+    if (guarded) return guarded;
+    const { signals, evidence } = enrichRequest(input, features, maxDataAgeMs);
     return { ...explainRules(config, signals), evidence };
   }
   function handle(input: TdsInput): { response: Response; decision?: TdsDecision } {
     if (!config.domains.includes(new URL(input.request.url).hostname.toLowerCase())) return { response: new Response("Unconfigured ingress", { status: 421 }) };
-    if (input.request.method !== "GET" && input.request.method !== "HEAD") return { response: new Response("Method not allowed", { status: 405, headers: { Allow: "GET, HEAD" } }) };
+    if (input.request.method !== "GET" && input.request.method !== "HEAD" && !protect(input)) return { response: new Response("Method not allowed", { status: 405, headers: { Allow: "GET, HEAD" } }) };
     const decision = decide(input), action = decision.action;
     const headers = { "cache-control": "no-store", "content-type": "text/plain; charset=utf-8", "x-content-type-options": "nosniff" };
     if (action.type === "block") return { decision, response: new Response(input.request.method === "HEAD" ? null : action.body ?? "", { status: action.status, headers }) };

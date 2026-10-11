@@ -11,7 +11,7 @@ describe("fingerprint evidence", () => {
       platform: '"Linux"',
       path: "/",
     });
-    expect(assessment).toEqual({ version: 1, automation: "declared", headless: true, uaMismatch: true, probe: false, probeRulesetVersion: 1, evidence: ["headless_hint", "version_mismatch"] });
+    expect(assessment).toEqual({ version: 1, automation: "declared", headless: true, uaMismatch: true, probe: false, probeRulesetVersion: 2, evidence: ["headless_hint", "version_mismatch"] });
     expect(matchesCondition({ field: "client.headless", operator: "eq", value: true }, fingerprintSignals(assessment))).toBe(true);
   });
 
@@ -43,14 +43,14 @@ describe("fingerprint evidence", () => {
     expect(analyzeFingerprint({ userAgent: chrome, path })).toMatchObject({
       automation: "suspected",
       probe: true,
-      probeRulesetVersion: 1,
+      probeRulesetVersion: 2,
       probeRule,
       evidence: ["sensitive_path"],
     });
   });
 
   it.each(["/", "/environment", "/.environment", "/blog/phpinfo-guide", "/wp-login.php", "/products/robotics", "/assets/status"])("does not infer automation from ordinary path %s", (path) => {
-    expect(analyzeFingerprint({ userAgent: chrome, path })).toMatchObject({ automation: "unknown", probe: false, probeRulesetVersion: 1, evidence: [] });
+    expect(analyzeFingerprint({ userAgent: chrome, path })).toMatchObject({ automation: "unknown", probe: false, probeRulesetVersion: 2, evidence: [] });
   });
 
   it.each([
@@ -63,7 +63,7 @@ describe("fingerprint evidence", () => {
     "/js/antibot-client.js",
     "/static/style/protect/index.js",
   ])("keeps non-sensitive paths outside the probe catalog: %s", (path) => {
-    expect(analyzeProbePath(path)).toEqual({ version: 1, probe: false });
+    expect(analyzeProbePath(path)).toEqual({ version: 2, probe: false });
   });
 
   it("does not invent consistency from absent or malformed hints", () => {

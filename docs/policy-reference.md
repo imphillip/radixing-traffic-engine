@@ -6,7 +6,7 @@ Schema 1 remains available through `parsePublishedConfig`/`evaluateRules` for le
 
 ## Rules and fields
 
-Enabled rules are evaluated by ascending integer priority. Equal priorities preserve configured order. The first match is terminal. `match: all` requires every condition; `match: any` requires one. An explicit default handles unmatched requests.
+In `createTds`, enabled scanner protections run before project rules. Project rules cannot override these guards. Enabled project rules are evaluated by ascending integer priority. Equal priorities preserve configured order. The first match is terminal. `match: all` requires every condition; `match: any` requires one. An explicit default handles unmatched requests. Low-level `evaluateRules`/`explainRules` evaluate only the supplied policy and signals; they do not execute built-in guards.
 
 | Group | Fields |
 | --- | --- |
@@ -36,7 +36,7 @@ Missing facts do not satisfy negative comparisons. Boolean and enum fields accep
 
 Redirect statuses: 301/302/307/308. `preservePath: true` appends the incoming pathname to the configured target path without changing target host. Queries are not forwarded implicitly. `queryAllowlist` specifies up to 32 parameter names; selected incoming values replace the same target parameter, preserving multiple values and unrelated configured parameters. Choose this allowlist to exclude credentials and sensitive values.
 
-Block statuses: 403/404/410, optional text body up to 500 characters. HEAD responses omit the body. HTTP execution accepts GET/HEAD only and rejects unconfigured hosts with 421. Redirect/block responses use `Cache-Control: no-store` because request features can select different actions.
+Block statuses: 403/404/410, optional text body up to 500 characters. HEAD responses omit the body. HTTP routing accepts GET/HEAD only and rejects unconfigured hosts with 421. Built-in scan guards can block other methods as well; remaining unsupported methods return 405. Redirect/block responses use `Cache-Control: no-store` because request features can select different actions.
 
 ## Stable A/B split
 
@@ -61,6 +61,6 @@ The host supplies a stable `client.key` when visitor-level assignment is needed.
 
 ## Explanation and supporting security
 
-`explainRules` returns matching rule/config version and condition outcomes without raw signal values. TDS adds snapshot ID, source freshness/membership evidence and parser version. `analyzeFingerprint` retains bounded header consistency and probe checks; `advanceBehavior` remains a separate optional host-state helper. Neither adds automatic blocking rules.
+`explainRules` returns matching rule/config version and condition outcomes without raw signal values. TDS adds snapshot ID, source freshness/membership evidence and parser version. Protection decisions use source `protection`, an empty project-rule trace, `parser: null` and stable built-in IDs. `analyzeFingerprint` and `advanceBehavior` remain observation helpers; `createTds` supplies the default blocking actions. The Node runtime computes enumeration evidence automatically, while embedded hosts supply trusted `request.pathEnumeration` observations. See [scanner protection](scanner-protection.md).
 
 Optional attribution configuration is retained for legacy hosts but does not enable tracking, cookies, callbacks or forwarding automatically. See [migration](migration-1.0.md) and [operations](operations.md).

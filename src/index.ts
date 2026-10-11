@@ -36,5 +36,5 @@ export {
 export type { BehaviorState, BehaviorAssessment } from "./behavior.js";
 export { compileFeatureSnapshot, parseFeatureSnapshot, parseIp, cidrRange } from "./features.js";
 export type { FeatureSnapshot, FeatureSource, AsnRange, CountryRange, CrawlerPattern, FeatureIndex } from "./features.js";
-export { createTds, enrichRequest } from "./tds.js";
-export type { TdsInput, TdsDecision, TdsOptions } from "./tds.js";
+export { createTds, enrichRequest, SCANNER_PROTECTION_VERSION } from "./tds.js";
+export type { TdsInput, TdsDecision, TdsOptions, ScannerProtectionOptions } from "./tds.js";

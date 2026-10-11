@@ -94,3 +94,44 @@ describe("deterministic routing and execution", () => {
     expect(matchesCondition({ field: "network.ip", operator: "notInCidr", value: ["192.0.2.0/24"] }, { "network.ip": "invalid" })).toBe(false);
   });
 });
+
+describe("standard scanner protection", () => {
+  it.each(["/.env", "/.env.production", "/%2egit/config", "/%252eenv", "/.svn/entries", "/.aws/credentials", "/phpinfo.php.bak", "/service-account.json", "/.env/%ZZ", "/%2eenv/%ZZ", "/foo%5c.git%5cconfig"])("blocks sensitive target %s before catch-all project rules", async (path) => {
+    const configured = { ...policy, rules: [{ id: "all", name: "All", enabled: true, priority: 0, match: "all", conditions: [{ field: "request.path", operator: "exists" }], action: { ...policy.defaultAction } }] };
+    const tds = createTds(configured, fixtureSnapshot());
+    const input = { request: new Request(`https://go.example.com${path}`), now: now + 30 * 86_400_000,
+      trustedSignals: { "request.probe": false, "request.path": "/" } };
+    const { response, decision } = tds.handle(input);
+    expect(response.status).toBe(404);
+    expect(response.headers.get("location")).toBeNull();
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(await response.text()).toBe("");
+    expect(decision).toMatchObject({ evaluation: { source: "protection", rules: [] }, evidence: { parser: null, protection: { version: 1, kind: "sensitive-path", probeRulesetVersion: 2 } } });
+    expect(tds.decide(input)).toEqual(decision);
+  });
+  it.each(["/", "/robots.txt", "/wp-login.php", "/wp-json/", "/assets/app.js.map", "/environment", "/docs/phpinfo-guide"])("preserves normal routing for %s, including declared bots and known VPNs", (path) => {
+    const tds = createTds(policy, fixtureSnapshot());
+    expect(tds.handle({ request: new Request(`https://go.example.com${path}`, { headers: { "user-agent": "ExampleBot/1.0" } }), ip: "192.0.2.200", now }).response.status).toBe(302);
+  });
+  it("protects HEAD/POST probes, preserves host validation and prioritizes enumeration", async () => {
+    const tds = createTds(policy, fixtureSnapshot());
+    for (const method of ["HEAD", "POST"]) {
+      const response = tds.handle({ request: new Request("https://go.example.com/.env", { method }), now }).response;
+      expect(response.status).toBe(404); expect(await response.text()).toBe("");
+    }
+    const input = { request: new Request("https://go.example.com/.env"), now, trustedSignals: { "request.pathEnumeration": true } };
+    expect(tds.decide(input)).toMatchObject({ action: { type: "block", status: 403 }, ruleId: "builtin:path-enumeration", evidence: { protection: { kind: "path-enumeration", behaviorVersion: 1 } } });
+    expect(tds.handle({ ...input, request: new Request("https://unknown.example.com/.env") }).response.status).toBe(421);
+    expect(() => tds.decide({ ...input, now: NaN })).toThrow("clock");
+  });
+  it("allows independent explicit opt-outs and captures options immutably", () => {
+    const options = { scannerProtection: { sensitivePaths: false, pathEnumeration: false } };
+    const tds = createTds(policy, fixtureSnapshot(), options);
+    options.scannerProtection.sensitivePaths = true;
+    const input = { request: new Request("https://go.example.com/.env"), now, trustedSignals: { "request.pathEnumeration": true } };
+    expect(tds.handle(input).response.status).toBe(302);
+    expect(createTds(policy, fixtureSnapshot(), { scannerProtection: { sensitivePaths: false } }).handle(input).response.status).toBe(403);
+    expect(createTds(policy, fixtureSnapshot(), { scannerProtection: { pathEnumeration: false } }).handle(input).response.status).toBe(404);
+    expect(() => createTds(policy, fixtureSnapshot(), { scannerProtection: { sensitivePaths: "false" as unknown as boolean } })).toThrow("options");
+  });
+});

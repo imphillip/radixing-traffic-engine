@@ -8,6 +8,8 @@ const { values, positionals } = parseArgs({ allowPositionals: true, options: {
   "refresh-hours": { type: "string", default: "24" }, "max-age-hours": { type: "string", default: "168" },
   country: { type: "boolean", default: false }, snapshot: { type: "string" },
   "trusted-proxy": { type: "string", multiple: true }, "client-ip-header": { type: "string" },
+  "no-sensitive-path-protection": { type: "boolean", default: false }, "no-path-enumeration-protection": { type: "boolean", default: false },
+  "max-tracked-sources": { type: "string", default: "4096" },
   help: { type: "boolean", default: false },
 } });
 function number(value: string, name: string, min: number, max: number): number {
@@ -17,7 +19,7 @@ function number(value: string, name: string, min: number, max: number): number {
 }
 async function main() {
   if (values.help || !positionals.length) {
-    console.log("Radixing TDS 1.0.0\nCommands: sync, serve, rollback\nOptions: --data DIR --policy FILE --host ADDRESS --port PORT --refresh-hours HOURS --max-age-hours HOURS --country --snapshot SHA256 --trusted-proxy PEER --client-ip-header HEADER\nCountry data is opt-in and requires DB-IP attribution. No model or API keys are used.");
+    console.log("Radixing TDS 1.1.0\nCommands: sync, serve, rollback\nOptions: --data DIR --policy FILE --host ADDRESS --port PORT --refresh-hours HOURS --max-age-hours HOURS --country --snapshot SHA256 --trusted-proxy PEER --client-ip-header HEADER --max-tracked-sources COUNT --no-sensitive-path-protection --no-path-enumeration-protection\nScanner protection is enabled by default. Country data is opt-in and requires DB-IP attribution. No model or API keys are used.");
     return;
   }
   if (positionals.length !== 1) throw new Error("Expected one command");
@@ -34,6 +36,8 @@ async function main() {
     const runtime = await startTdsServer({ policyPath: values.policy, dataDirectory: values.data, host: values.host, port,
       refreshIntervalMs: number(values["refresh-hours"], "refresh-hours", 1, 24 * 24) * 3_600_000,
       maxDataAgeMs: number(values["max-age-hours"], "max-age-hours", 1, 24 * 365) * 3_600_000,
+      maxTrackedSources: number(values["max-tracked-sources"], "max-tracked-sources", 1, 65_536),
+      scannerProtection: { sensitivePaths: !values["no-sensitive-path-protection"], pathEnumeration: !values["no-path-enumeration-protection"] },
       sync: values.country ? { get sources() { return [...defaultSources, countrySource()]; } } : { sources },
       ...(values["trusted-proxy"] ? { trustedProxyPeers: values["trusted-proxy"] } : {}),
       ...(values["client-ip-header"] ? { clientIpHeader: values["client-ip-header"] } : {}),

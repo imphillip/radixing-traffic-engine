@@ -1,4 +1,4 @@
-export const PROBE_RULESET_VERSION = 1;
+export const PROBE_RULESET_VERSION = 2;
 
 export const probeRuleIds = [
   "env-file",
@@ -38,18 +38,22 @@ const probeRules: readonly ProbeRule[] = [
 export function analyzeProbePath(path: string | undefined): ProbePathAssessment | undefined {
   if (!path || !path.startsWith("/")) return undefined;
 
-  let decoded: string;
-  try {
-    decoded = decodeURIComponent(path);
-  } catch {
-    return undefined;
-  }
-
-  const segments = decoded.split("/").filter(Boolean);
-  for (const rule of probeRules) {
-    if (segments.some(rule.matches)) {
-      return { version: PROBE_RULESET_VERSION, probe: true, rule: rule.id };
+  let decoded = path, malformed = false;
+  // Match before decoding as well, so an unrelated malformed segment cannot hide a target.
+  for (let round = 0; round <= 2; round++) {
+    const segments = decoded.replace(/\\/g, "/").split("/").filter(Boolean);
+    for (const rule of probeRules) {
+      if (segments.some(rule.matches)) return { version: PROBE_RULESET_VERSION, probe: true, rule: rule.id };
     }
+    if (round === 2) break;
+    let next: string;
+    try { next = decodeURIComponent(decoded); }
+    catch {
+      malformed = true;
+      next = segments.map((segment) => { try { return decodeURIComponent(segment); } catch { return segment; } }).join("/");
+    }
+    if (next === decoded) break;
+    decoded = next;
   }
-  return { version: PROBE_RULESET_VERSION, probe: false };
+  return malformed ? undefined : { version: PROBE_RULESET_VERSION, probe: false };
 }

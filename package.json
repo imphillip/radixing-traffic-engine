@@ -1,6 +1,6 @@
 {
   "name": "@radixing/traffic-engine",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Deterministic traffic distribution system with automatically refreshed open network and user-agent data",
   "type": "module",
   "license": "MIT",

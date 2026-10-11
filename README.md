@@ -5,7 +5,7 @@
 
 A deterministic Traffic Distribution System for paid-traffic ingress and conditional destination routing. Automatically refreshed open IP, network and crawler data enrich incoming requests; explicit project rules select a destination. Run it as a Node.js redirect service or embed its TypeScript decision core.
 
-**Version 1.0.0 uses no Jev, LLM, model providers or API keys.** Identical policy, data snapshot, request observations and evaluation time produce identical decisions. Deterministic matching does not make upstream labels, User-Agent claims or inferred locations infallible.
+**Version 1.1.0 uses no Jev, LLM, model providers or API keys.** Identical policy, data snapshot, request observations and evaluation time produce identical decisions. Deterministic matching does not make upstream labels, User-Agent claims or inferred locations infallible.
 
 ## Request flow
 
@@ -13,7 +13,10 @@ A deterministic Traffic Distribution System for paid-traffic ingress and conditi
 flowchart LR
   Sources[Open feature sources] --> Update[Scheduled download and validation]
   Update --> Snapshot[Versioned local snapshot]
-  Request[Inbound request] --> Features[Network and device features]
+  Request[Inbound request and trusted scan evidence] --> Guard{Standard scanner protection}
+  Guard -->|Clear| Features[Network and device features]
+  Guard -->|Sensitive path or enumeration| Block[404 or 403]
+  Block --> HTTP
   Snapshot --> Features
   Features --> Rules[Ordered project rules]
   Policy[Project policy] --> Rules
@@ -33,11 +36,12 @@ No dataset download happens on the request path. Refresh failures preserve the l
 - Optional DB-IP Country Lite geolocation with attribution requirements.
 - Project rules for network, geography, device, browser, campaign, path and method; IPv4/IPv6 CIDR conditions.
 - Stable weighted A/B assignment using an explicit key, fixed salt and missing-key fallback.
-- Redirects with explicit query forwarding, optional path forwarding, and optional basic probe blocking.
+- Redirects with explicit query forwarding and optional path forwarding.
+- Default sensitive-path blocking and bounded standalone path-enumeration protection before project routing.
 - Checksummed data snapshots, atomic activation, previous-version rollback and source freshness evidence.
 - A standalone Node.js service with scheduled refresh and a separately importable synchronous core.
 
-Network and bot observations never block traffic automatically. Security is supporting functionality, not a managed WAF or DDoS service. Browser Canvas/WebGL fingerprint collection, visitor tracking, conversions, merchant accounts and administration UI are outside this release.
+Network and bot labels never block traffic automatically. Sensitive exposure targets return 404; confirmed path-enumeration evidence returns 403. See [scanner protection](docs/scanner-protection.md) for thresholds, explicit overrides, shared-IP limitations and embedded-host responsibilities. Security is supporting functionality, not a managed WAF or DDoS service. Browser Canvas/WebGL fingerprint collection, visitor tracking, conversions, merchant accounts and administration UI are outside this release.
 
 ## Run
 
@@ -46,7 +50,7 @@ Requires Node.js 22 or later.
 ```sh
 git clone https://github.com/imphillip/radixing-traffic-engine.git
 cd radixing-traffic-engine
-git checkout v1.0.0
+git checkout v1.1.0
 npm ci
 npm run data:sync
 npm start -- --policy examples/policy.json --data .tds-data
@@ -76,7 +80,7 @@ Country mode must be used consistently for sync and serve. With country mode, th
 The package is distributed through GitHub and release assets, not the npm registry. Pin a tag or a full commit for production builds.
 
 ```sh
-npm install git+https://github.com/imphillip/radixing-traffic-engine.git#v1.0.0
+npm install git+https://github.com/imphillip/radixing-traffic-engine.git#v1.1.0
 ```
 
 ```ts
@@ -100,7 +104,8 @@ const { response, decision } = tds.handle({
 - [Policy reference](docs/policy-reference.md): fields, matching, stable split and action semantics.
 - [Operations](docs/operations.md): automatic refresh, rollback, reverse proxy and deployment.
 - [Migration to 1.0](docs/migration-1.0.md): removed model APIs and compatibility boundaries.
-- [Probe provenance](docs/rule-provenance.md): the optional narrow built-in probe catalog.
+- [Scanner protection and 1.1 migration](docs/scanner-protection.md): default guards, bounded state and host contracts.
+- [Probe provenance](docs/rule-provenance.md): the narrow built-in sensitive-path catalog.
 
 ## Development
 

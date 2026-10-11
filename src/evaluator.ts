@@ -23,7 +23,7 @@ export interface RuleExplanation extends RuleDecision {
   evaluation: {
     version: 1;
     configVersion: number;
-    source: "rule" | "default";
+    source: "rule" | "default" | "protection";
     rules: RuleEvaluation[];
   };
 }
