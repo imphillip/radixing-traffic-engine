@@ -1,31 +1,68 @@
-# Radixing TDS
+# Radixing Traffic Engine
 
 [![CI](https://github.com/imphillip/radixing-traffic-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/imphillip/radixing-traffic-engine/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-A deterministic Traffic Distribution System for paid-traffic ingress and conditional destination routing. Automatically refreshed open IP, network and crawler data enrich incoming requests; explicit project rules select a destination. Run it as a Node.js redirect service or embed its TypeScript decision core.
+A deterministic **Traffic Distribution System (TDS)** for paid-traffic ingress, A/B destinations and conditional redirects. Open IP, network and crawler datasets supply local request features; explicit project rules select a destination. Scanner protection is included by default. Run the Node.js redirect service or embed the TypeScript decision core.
 
 **Version 1.1.0 uses no Jev, LLM, model providers or API keys.** Identical policy, data snapshot, request observations and evaluation time produce identical decisions. Deterministic matching does not make upstream labels, User-Agent claims or inferred locations infallible.
+
+## Use cases
+
+| Scenario | Configuration |
+| --- | --- |
+| Advertising ingress | Select a destination using campaign parameters, geography, network, browser or device signals |
+| A/B landing pages | Assign a stable key to weighted destinations with a fixed salt and an explicit missing-key fallback |
+| Regional or device destinations | Apply ordered conditions and retain a default destination for unmatched requests |
+| Scanner noise at ingress | Terminate sensitive-file probes and trusted path-enumeration evidence before business routing |
+
+Developers researching **traffic cloaking** or **conditional delivery** can reuse the routing and feature adapters. The engine does not authenticate advertising-platform reviewers or infer visitor intent. It provides supporting scan protection and can sit behind a **WAF**, but is not a WAF ruleset or replacement. There is no bundled frontend UI, merchant control plane, origin proxy or conversion tracker.
 
 ## Request flow
 
 ```mermaid
-flowchart LR
-  Sources[Open feature sources] --> Update[Scheduled download and validation]
-  Update --> Snapshot[Versioned local snapshot]
-  Request[Inbound request and trusted scan evidence] --> Guard{Standard scanner protection}
+flowchart TB
+  Request[Validated ingress request] --> Guard{Default scanner protection}
   Guard -->|Clear| Features[Network and device features]
-  Guard -->|Sensitive path or enumeration| Block[404 or 403]
-  Block --> HTTP
-  Snapshot --> Features
+  Guard -->|Sensitive path| NotFound[Local 404]
+  Guard -->|Path enumeration| Forbidden[Local 403]
+  Snapshot[Compiled local data snapshot] --> Features
+  History[Trusted bounded path history] --> Guard
   Features --> Rules[Ordered project rules]
   Policy[Project policy] --> Rules
-  Rules --> Decision[Explicit destination or block]
-  Decision --> HTTP[HTTP execution]
-  Decision --> Audit[Version and rule evidence]
+  Rules -->|First match| Action[Rule action]
+  Rules -->|No match| Default[Configured default]
+  Action --> HTTP[Redirect or block response]
+  Default --> HTTP
+  NotFound --> Audit[Versioned decision evidence]
+  Forbidden --> Audit
+  HTTP --> Audit
 ```
 
-No dataset download happens on the request path. Refresh failures preserve the last valid snapshot. Expired or unavailable feature sources contribute unknown values; unmatched requests use the configured default.
+The standalone service computes bounded path history automatically. Embedded hosts supply trusted enumeration evidence; the synchronous core has no hidden visitor history. Enabled scanner guards precede project rules, including catch-all redirects.
+
+## Where feature data lives
+
+**Datasets are downloaded into the deployment environment, not committed to this repository or queried upstream for each visitor.** Git and release packages contain adapter code, dependency declarations, documentation and examples. Bowser is installed as a pinned dependency; remote IP/network/crawler feeds become local operational snapshots.
+
+```mermaid
+flowchart LR
+  Upstream[Public feeds] -->|Background sync| Validate[Validate downloads]
+  Validate -->|Success| Local[Local snapshots and indexes]
+  Validate -->|Failure| Keep[Keep previous snapshot]
+  Local --> Lookup[In-memory visitor lookup]
+```
+
+| Event | Standalone default behavior |
+| --- | --- |
+| First start without data | Download and validate before accepting traffic |
+| Normal traffic | Query local in-memory indexes; no dataset network call |
+| Scheduled refresh | Fetch all configured feeds every 24 hours and atomically activate a valid snapshot |
+| Failed refresh | Keep the preceding valid snapshot |
+| Source older than seven days | Omit its facts as unknown; continue guards and project evaluation |
+| External sync or rollback | Reload a changed snapshot within one minute |
+
+Local files default to `.tds-data/`; use persistent storage across restarts. The embedded core does not download or schedule updates: its host supplies a snapshot and owns refresh/publication. See [deployment modes](docs/deployment.md) and [data sources](docs/data-sources.md).
 
 ## Included capabilities
 
@@ -41,7 +78,7 @@ No dataset download happens on the request path. Refresh failures preserve the l
 - Checksummed data snapshots, atomic activation, previous-version rollback and source freshness evidence.
 - A standalone Node.js service with scheduled refresh and a separately importable synchronous core.
 
-Network and bot labels never block traffic automatically. Sensitive exposure targets return 404; confirmed path-enumeration evidence returns 403. See [scanner protection](docs/scanner-protection.md) for thresholds, explicit overrides, shared-IP limitations and embedded-host responsibilities. Security is supporting functionality, not a managed WAF or DDoS service. Browser Canvas/WebGL fingerprint collection, visitor tracking, conversions, merchant accounts and administration UI are outside this release.
+Network and bot labels never block traffic automatically. Sensitive exposure targets return 404. Enumeration returns 403 after 60 requests covering at least 40 paths within 15 seconds, followed by a fixed 60-second cooldown. See [scanner protection](docs/scanner-protection.md) for explicit overrides, tracking capacity, shared-IP limitations and host responsibilities. Browser Canvas/WebGL collection and distributed abuse prevention are outside this release.
 
 ## Run
 
@@ -97,9 +134,12 @@ const { response, decision } = tds.handle({
 
 `@radixing/traffic-engine/node` exports the updater, snapshot loader, rollback and standalone server. The core import has no Node.js dependencies and performs no I/O. Full global ASN snapshots can consume substantial memory; constrained edge integrations should use scoped datasets or host-supplied trusted ASN/geolocation observations. The library never trusts forwarded-IP headers by itself.
 
+For weighted visitor assignment, supply a stable `clientKey`; the service does not invent visitor identity. A missing split key follows the policy's explicit fallback. To add enumeration in an embedded host, maintain isolated state and supply `trustedSignals["request.pathEnumeration"]`; see the [host contract](docs/scanner-protection.md#embedded-host-contract).
+
 ## Documentation
 
 - [Architecture](docs/architecture.md): data plane, execution and host responsibilities.
+- [Deployment modes](docs/deployment.md): standalone, embedded Node and edge integration responsibilities.
 - [Open data sources](docs/data-sources.md): formats, licenses, provenance, coverage and update validation.
 - [Policy reference](docs/policy-reference.md): fields, matching, stable split and action semantics.
 - [Operations](docs/operations.md): automatic refresh, rollback, reverse proxy and deployment.

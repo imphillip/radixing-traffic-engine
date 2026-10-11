@@ -7,6 +7,18 @@ Since 1.1.0, `createTds` and the standalone server enable two supporting securit
 | Sensitive target | Actual request pathname matches the versioned [five-category probe catalog](rule-provenance.md) | 404 |
 | Path enumeration | Trusted host observation `request.pathEnumeration === true` | 403 |
 
+```mermaid
+flowchart TB
+  Request[Configured ingress request] --> Enumeration{Trusted enumeration evidence?}
+  Enumeration -->|Yes and enabled| Forbidden[Local 403]
+  Enumeration -->|No or disabled| Probe{Sensitive path match?}
+  Probe -->|Yes and enabled| NotFound[Local 404]
+  Probe -->|No or disabled| Features[Local feature lookup]
+  Features --> Policy[Project rules and configured default]
+  Forbidden --> Evidence[Protection version and rule ID]
+  NotFound --> Evidence
+```
+
 Sensitive targets include `.env` variants, `.git`/`.svn`, `.aws`, specific `phpinfo` forms and service-account JSON filenames. Raw paths, up to two percent-decoding rounds and backslash separators are checked. Request claims such as `trustedSignals["request.probe"] = false` cannot disable this guard; only an explicit runtime option can. Paths such as `/wp-login.php`, `/wp-json/`, `/robots.txt`, asset maps and ordinary campaign landing pages remain outside the catalog.
 
 These are exposure-target and request-pattern checks, not a classification of visitor intent. No default guard blocks requests solely because of a bot User-Agent, VPN, datacenter, ASN, country or advertising source. This is not a general WAF, application vulnerability scanner, fraud detector or DDoS service. The application and edge still need their own access controls and resource limits.
@@ -30,6 +42,8 @@ State survives data refresh/reload within one process, but does not survive rest
 The synchronous core does not retain history or inspect forwarded-IP headers. It blocks sensitive paths immediately and blocks enumeration only when the host supplies trusted evidence:
 
 ```ts
+import { advanceBehavior } from "@radixing/traffic-engine";
+
 const observed = advanceBehavior(previousState, pathnameWithoutQuery, now);
 // Persist observed.state using serialized, isolated host storage.
 const result = tds.handle({
@@ -41,6 +55,8 @@ const result = tds.handle({
 ```
 
 The host must isolate property/source state, serialize updates, bound capacity and retention, and use a trustworthy client IP. Never copy the evidence flag from public headers/query parameters. Missing evidence means unknown, not a verified benign source. Node integrations can also use `createScannerTracker` from `@radixing/traffic-engine/node`; it is process-local rather than distributed storage. Low-level `evaluateRules` and `explainRules` remain policy-only APIs and do not install these guards.
+
+Scanner guards use packaged code and explicit host evidence, not the downloaded IP/crawler databases. A running engine's sensitive-path guard still works when network sources expire. Startup still requires a structurally valid snapshot; protection is not a separate listener that bypasses startup validation. See [deployment modes](deployment.md) for refresh and state ownership.
 
 ## Explicit overrides
 

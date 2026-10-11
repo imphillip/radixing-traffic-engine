@@ -2,6 +2,8 @@
 
 This is a breaking major release, directly following 0.4.0. The product is now a deterministic TDS with automated open data, not a model-assisted traffic classifier or learning engine.
 
+This page records the 1.0 transition. Adopting current 1.1 also requires [scanner protection migration](scanner-protection.md#evidence-and-upgrading-from-10), including changed default guards, the new protection decision source and nullable parser evidence. See [deployment modes](deployment.md) to plan data maintenance and bounded host state.
+
 ## Removed
 
 - Jev gateway, OpenRouter/model constants, feature serialization and classification parsers.

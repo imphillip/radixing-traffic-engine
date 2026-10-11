@@ -30,7 +30,9 @@ Campaign fields come from bounded `utm_source`, `utm_medium`, `utm_campaign` que
 | `exists` | Present and not an empty string |
 | `inCidr`, `notInCidr` | IPv4/IPv6 network membership; only on `network.ip`, using an array of CIDRs |
 
-Missing facts do not satisfy negative comparisons. Boolean and enum fields accept equality/set operators or `exists`. There are no temporal or model-class signal fields in 1.0.
+Missing facts do not satisfy negative comparisons. Boolean and enum fields accept equality/set operators or `exists`. There are no temporal or model-class signal fields in the current TDS.
+
+Feature availability depends on the deployment: a fresh local snapshot, trusted host observations, or both. Daily data refresh updates facts, not rule expressions. Specify a suitable default for absent/expired facts, and see [data coverage](data-sources.md#coverage-and-freshness) before relying on a negative list result.
 
 ## Redirects and blocks
 
