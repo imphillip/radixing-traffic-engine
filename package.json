@@ -62,7 +62,7 @@
     "csv-parse": "7.0.3",
     "ipaddr.js": "2.5.0",
     "re2js": "2.8.6",
-    "structured-headers": "2.0.3"
+    "structured-headers": "2.1.0"
   },
   "devDependencies": {
     "@types/node": "22.20.5",
