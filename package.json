@@ -1,6 +1,6 @@
 {
   "name": "@radixing/traffic-engine",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Deterministic traffic distribution system with automatically refreshed open network and user-agent data",
   "type": "module",
   "license": "MIT",
@@ -23,6 +23,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./web": {
+      "types": "./dist/web.d.ts",
+      "default": "./dist/web.js"
     },
     "./node": {
       "types": "./dist/node.d.ts",
@@ -62,6 +66,8 @@
   },
   "devDependencies": {
     "@types/node": "22.20.5",
+    "esbuild": "0.28.1",
+    "miniflare": "5.20261006.1-alpha",
     "typescript": "^7.0.2",
     "vitest": "^4.1.11"
   }

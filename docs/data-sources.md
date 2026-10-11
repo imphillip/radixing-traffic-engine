@@ -2,7 +2,7 @@
 
 ## Data lifecycle
 
-Remote datasets are downloaded to the deployment environment. They are not checked into this repository, bundled in release packages, or requested upstream for each visitor. The standalone Node updater owns downloads and local files; the synchronous core only consumes a supplied snapshot and trusted request observations. Bowser is a pinned parser dependency rather than a remotely refreshed dataset.
+Remote datasets are downloaded to the deployment environment. They are not checked into this repository, bundled in release packages, or requested upstream for each visitor. The standalone Node updater owns downloads and local files; embedded hosts can use the portable Web builder in their own background job. The synchronous core only consumes a supplied snapshot and trusted request observations. Bowser is a pinned parser dependency rather than a remotely refreshed dataset.
 
 ```mermaid
 sequenceDiagram
@@ -47,7 +47,9 @@ The researched [ipverse/as-ip-blocks](https://github.com/ipverse/as-ip-blocks) i
 
 The Node updater downloads five default feeds, or six with country mode. TSV and CSV use `csv-parse`; JSON uses the standard parser; IP/CIDR syntax uses `ipaddr.js`; crawler patterns compile with RE2JS. Unsupported regex syntax rejects the whole candidate rather than silently executing unsafe backtracking expressions or dropping patterns.
 
-Every source download has a 60-second deadline, a 32 MiB received-byte limit and a 128 MiB expanded-data limit. These are configurable through `SyncOptions`. Validation rejects malformed rows, invalid countries/ASNs/addresses, backwards or overlapping ASN/country ranges, empty or unexpectedly small feeds, and a greater-than-50% record-count reduction against the preceding source version. Prefix lists may overlap and are merged into searchable intervals. Unmapped ASN 0 entries are omitted; IPtoASN `Unknown` country becomes an internal `ZZ` value and does not emit a country signal.
+Every Node source download has a 60-second deadline, a 32 MiB received-byte limit and a 128 MiB expanded-data limit. These are configurable through `SyncOptions`. Node validation rejects malformed rows, invalid countries/ASNs/addresses, backwards or overlapping ASN/country ranges, empty or unexpectedly small feeds, and a greater-than-50% record-count reduction against the preceding source version. Prefix lists may overlap and are merged into searchable intervals. Unmapped ASN 0 entries are omitted; IPtoASN `Unknown` country becomes an internal `ZZ` value and does not emit a country signal.
+
+The [Web builder](web-updater.md) shares source definitions, parsers and record checks but defaults to smaller limits and requires explicit source selection. It does not compile whole-snapshot lookup indexes; hosts perform cross-record and shard/index acceptance through `validateSnapshot` before publication. Node continues full index acceptance. Both return the same schema and checksum for identical source bytes and retrieval time.
 
 The complete candidate is normalized before hashing. The snapshot ID is SHA-256 of the canonical `{ sources, data }` JSON. Each source records its ID, public URL, license, fetch time, raw download checksum and accepted record count. Checksums detect local corruption; they do not authenticate an upstream maintainer or prove dataset accuracy. `fetchedAt` records local retrieval time, not the original observation time of every upstream record.
 

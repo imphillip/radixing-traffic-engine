@@ -7,7 +7,7 @@ The same deterministic decision core can run inside a standalone Node service or
 | Responsibility | Standalone Node service | Embedded Node application | Edge or other embedded host |
 | --- | --- | --- | --- |
 | Execute redirects and blocks | Built-in HTTP listener | Call `createTds().handle` and return its response | Call `createTds().handle` and return its response |
-| Fetch remote feature feeds | Node updater, first sync and scheduled refresh | Host calls the separately imported Node updater | External publisher or host data pipeline |
+| Fetch remote feature feeds | Node updater, first sync and scheduled refresh | Host calls the separately imported Node updater | Host-owned background job using the Web builder, or external pipeline |
 | Store snapshots | Local data directory; persistent volume recommended | Host-selected directory or storage adapter around publication | Host-managed storage and bounded deployment-specific snapshots |
 | Compile and swap active data | Built in after validation | Host constructs and activates a new engine | Host constructs and activates a new engine |
 | Identify client IP | Socket peer or explicitly trusted proxy header | Host validates ingress identity | Host validates platform-provided identity |
@@ -82,7 +82,7 @@ The application owns the refresh/reload schedule and should preserve the precedi
 
 ```mermaid
 flowchart LR
-  Feeds[Public data feeds] --> Publisher[External download and validation]
+  Feeds[Public data feeds] --> Publisher[Host background Web builder or external pipeline]
   Publisher --> Scoped[Host-published scoped snapshot]
   Scoped --> Core[Embedded TDS core]
   Platform[Trusted ingress and network facts] --> Core
@@ -91,11 +91,11 @@ flowchart LR
   Core --> Response[Web Response and evidence]
 ```
 
-Keep Node APIs, filesystem operations, decompression and global feed downloads outside the constrained request runtime. Full global data is substantial: one initial smoke observed about 1.16 GiB peak RSS and 3.8 seconds to compile, not a deployment capacity guarantee. Measure both steady-state memory and update headroom.
+Keep Node APIs, filesystem operations and global feed downloads outside the constrained request runtime. A separate background Worker can import `@radixing/traffic-engine/web` and explicitly select small VPN/datacenter/crawler feeds, using Web APIs for download, hashing and bounded decompression. It must validate the shards used by its readers before publication; see the [portable updater contract](web-updater.md). Full global data is substantial: one initial smoke observed about 1.16 GiB peak RSS and 3.8 seconds to compile, not a deployment capacity guarantee. Measure both steady-state memory and update headroom.
 
 Use a scoped snapshot with appropriate source metadata, trusted host-provided network/geolocation facts, or a combination. A trusted fact does not require a local copy of the equivalent global dataset. All snapshot data collections must still be present as arrays, even when intentionally empty. A `FeatureSnapshot` contains `schemaVersion`, `id`, `sources` and `data`; consult the [public types](../src/features.ts). `parseFeatureSnapshot` validates structure; a custom publisher must separately verify authenticity and integrity because the core does not recompute the Node publisher's checksum.
 
-The host owns publication, isolation, state serialization and atomic engine replacement. The public package does not provision an edge scheduler or storage resources, and the standalone refresh defaults do not automatically apply to an embedded runtime.
+The host owns publication, isolation, state serialization and atomic engine replacement. The public package does not provision an edge scheduler or storage resources, and the standalone refresh defaults do not automatically apply to an embedded runtime. Code CI and releases belong in GitHub; operational data refresh can run entirely in the deployment environment, without a GitHub job or external storage API token.
 
 ## Independent updates
 
