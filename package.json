@@ -66,7 +66,7 @@
   },
   "devDependencies": {
     "@types/node": "22.20.5",
-    "esbuild": "0.28.1",
+    "esbuild": "0.28.2",
     "miniflare": "5.20261006.1-alpha",
     "typescript": "^7.0.2",
     "vitest": "^4.1.11"
